@@ -4,9 +4,27 @@ description: "CPBL (Chinese Professional Baseball League) stats, scores, schedul
 tags: ["cpbl", "baseball", "taiwan", "sports", "scores"]
 ---
 
-# CPBL - 中華職棒資訊查詢 ⚾
+# CPBL Skill - 中華職棒資訊查詢 ⚾
 
 Query CPBL game results, schedules, standings, and player stats across all game types.
+
+## Data Sources
+
+| Source | Description |
+|--------|-------------|
+| CPBL official API | Game results, schedule, standings, player stats |
+| 台灣棒球維基館 | Historical data not available via API |
+
+### Secondary Source: 台灣棒球維基館
+
+For data that the official API cannot provide (annual MVP, awards, historical records, player career data), use `web_fetch` to scrape [台灣棒球維基館](https://twbsball.dils.tku.edu.tw/).
+
+**Search URL format:** `https://twbsball.dils.tku.edu.tw/wiki/index.php?title=關鍵字`
+
+Common pages:
+- 年度 MVP: `中華職棒年度最有價值球員`
+- 年度新人王: `中華職棒年度新人王`
+- Player lookup: Player name (include birth year in parentheses)
 
 ## Features
 
@@ -17,6 +35,7 @@ Query CPBL game results, schedules, standings, and player stats across all game 
 | Standings | `cpbl_standings.py` | CPBL official API |
 | Player stats | `cpbl_stats.py` | CPBL official API |
 | News | `cpbl_news.py` | web_search |
+| Awards & history | `web_fetch` | 台灣棒球維基館 |
 
 ## Quick Start
 

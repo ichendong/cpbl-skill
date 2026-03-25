@@ -10,6 +10,7 @@
 """
 CPBL API 共用模組
 負責 CSRF token 取得、快取與 API 呼叫
+提供共用常數（KIND_NAMES、TEAM_ALIASES）與工具函式（resolve_team）
 """
 
 import json
@@ -19,7 +20,7 @@ import urllib.parse
 import urllib.error
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Optional, Any
+from typing import Optional
 
 # 快取檔案路徑（依據 TASK-001 要求）
 TOKEN_CACHE_FILE = Path('/tmp/cpbl_csrf_token.txt')
@@ -45,7 +46,7 @@ class CPBLAPI:
                     expire_str = data.get('expire')
                     if expire_str:
                         self.token_expire = datetime.fromisoformat(expire_str)
-            except:
+            except (json.JSONDecodeError, KeyError, OSError, ValueError):
                 pass
     
     def _save_token_cache(self):
@@ -100,9 +101,61 @@ class CPBLAPI:
         
         return self.csrf_token
     
+    def _build_request(self, endpoint: str, data: dict) -> urllib.request.Request:
+        """
+        建立 POST 請求物件
+        
+        Args:
+            endpoint: API 路徑
+            data: POST 資料
+        
+        Returns:
+            Request 物件
+        """
+        if not self._is_token_valid():
+            self.fetch_csrf_token()
+        
+        url = f'{self.BASE_URL}{endpoint}'
+        headers = {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Requested-With': 'XMLHttpRequest',
+            'RequestVerificationToken': self.csrf_token,
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+        post_data = urllib.parse.urlencode(data).encode('utf-8')
+        req = urllib.request.Request(url, data=post_data, headers=headers, method='POST')
+        return req
+    
+    def _send_request(self, endpoint: str, data: dict, parse_json: bool = True) -> dict | str:
+        """
+        發送 POST 請求，支援 JSON 和 HTML 回應
+        
+        Args:
+            endpoint: API 路徑
+            data: POST 資料
+            parse_json: True 回傳 JSON dict，False 回傳 HTML 字串
+        
+        Returns:
+            JSON dict 或 HTML 字串
+        """
+        req = self._build_request(endpoint, data)
+        
+        try:
+            with urllib.request.urlopen(req, timeout=30) as response:
+                body = response.read().decode('utf-8')
+                return json.loads(body) if parse_json else body
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                self.fetch_csrf_token(force_refresh=True)
+                req = self._build_request(endpoint, data)
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    body = response.read().decode('utf-8')
+                    return json.loads(body) if parse_json else body
+            raise
+    
     def post_api(self, endpoint: str, data: dict) -> dict:
         """
-        發送 POST 請求到 CPBL API
+        發送 POST 請求到 CPBL API（JSON 回應）
         
         Args:
             endpoint: API 路徑（如 /schedule/getgamedatas）
@@ -111,40 +164,20 @@ class CPBLAPI:
         Returns:
             JSON 回應
         """
-        # 確保有 token
-        if not self._is_token_valid():
-            self.fetch_csrf_token()
+        return self._send_request(endpoint, data, parse_json=True)
+    
+    def post_api_html(self, endpoint: str, data: dict) -> str:
+        """
+        發送 POST 請求到 CPBL API（HTML 回應）
         
-        url = f'{self.BASE_URL}{endpoint}'
+        Args:
+            endpoint: API 路徑（如 /stats/recordall）
+            data: POST 資料
         
-        # 準備 headers
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest',
-            'RequestVerificationToken': self.csrf_token,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-        
-        # 編碼 POST 資料
-        post_data = urllib.parse.urlencode(data).encode('utf-8')
-        
-        # 發送請求
-        req = urllib.request.Request(url, data=post_data, headers=headers, method='POST')
-        
-        try:
-            with urllib.request.urlopen(req, timeout=30) as response:
-                result = json.loads(response.read().decode('utf-8'))
-                return result
-        except urllib.error.HTTPError as e:
-            # 如果 403/401，可能是 token 過期，重試一次
-            if e.code in (401, 403):
-                self.fetch_csrf_token(force_refresh=True)
-                headers['RequestVerificationToken'] = self.csrf_token
-                req = urllib.request.Request(url, data=post_data, headers=headers, method='POST')
-                with urllib.request.urlopen(req, timeout=30) as response:
-                    result = json.loads(response.read().decode('utf-8'))
-                    return result
-            raise
+        Returns:
+            HTML 字串
+        """
+        return self._send_request(endpoint, data, parse_json=False)
 
 
 # 提供全域實例
@@ -164,8 +197,44 @@ def get_csrf_token(force_refresh: bool = False) -> str:
 
 
 def post_api(endpoint: str, data: dict) -> dict:
-    """發送 POST 請求（便捷函式）"""
+    """發送 POST 請求，回傳 JSON（便捷函式）"""
     return get_api().post_api(endpoint, data)
+
+
+def post_api_html(endpoint: str, data: dict) -> str:
+    """發送 POST 請求，回傳 HTML（便捷函式）"""
+    return get_api().post_api_html(endpoint, data)
+
+
+# ─── 共用常數與工具函式 ───
+
+# 賽事類型對照表
+KIND_NAMES = {
+    'A': '一軍例行賽', 'B': '一軍明星賽', 'C': '一軍總冠軍賽',
+    'D': '二軍例行賽', 'E': '一軍季後挑戰賽', 'F': '二軍總冠軍賽',
+    'G': '一軍熱身賽', 'H': '未來之星邀請賽', 'X': '國際交流賽',
+}
+
+# 球隊名稱模糊匹配對照表
+TEAM_ALIASES = {
+    '兄弟': '中信兄弟', '中信': '中信兄弟', '中信兄弟': '中信兄弟',
+    '統一': '統一7-ELEVEn獅', '獅': '統一7-ELEVEn獅', '統一7-ELEVEn獅': '統一7-ELEVEn獅',
+    '統一獅': '統一7-ELEVEn獅', '統一7-11獅': '統一7-ELEVEn獅',
+    '樂天': '樂天桃猿', '桃猿': '樂天桃猿', '樂天桃猿': '樂天桃猿', 'Lamigo': '樂天桃猿',
+    '富邦': '富邦悍將', '悍將': '富邦悍將', '富邦悍將': '富邦悍將',
+    '味全': '味全龍', '龍': '味全龍', '味全龍': '味全龍',
+    '台鋼': '台鋼雄鷹', '雄鷹': '台鋼雄鷹', '台鋼雄鷹': '台鋼雄鷹',
+}
+
+
+def resolve_team(team_input: str) -> Optional[str]:
+    """模糊匹配球隊名稱，回傳正式名稱或 None"""
+    if team_input in TEAM_ALIASES.values():
+        return team_input
+    for alias, full_name in TEAM_ALIASES.items():
+        if team_input in alias or alias in team_input:
+            return full_name
+    return None
 
 
 if __name__ == '__main__':

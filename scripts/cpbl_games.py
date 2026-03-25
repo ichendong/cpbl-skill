@@ -21,34 +21,7 @@ from typing import Optional
 
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
-from _cpbl_api import post_api
-
-# 賽事類型對照表
-KIND_NAMES = {
-    'A': '一軍例行賽', 'B': '一軍明星賽', 'C': '一軍總冠軍賽',
-    'D': '二軍例行賽', 'E': '一軍季後挑戰賽', 'F': '二軍總冠軍賽',
-    'G': '一軍熱身賽', 'H': '未來之星邀請賽', 'X': '國際交流賽',
-}
-
-# 球隊名稱模糊匹配對照表
-TEAM_ALIASES = {
-    '兄弟': '中信兄弟', '中信': '中信兄弟', '中信兄弟': '中信兄弟',
-    '統一': '統一7-ELEVEn獅', '獅': '統一7-ELEVEn獅', '統一7-ELEVEn獅': '統一7-ELEVEn獅',
-    '統一獅': '統一7-ELEVEn獅', '統一7-11獅': '統一7-ELEVEn獅',
-    '樂天': '樂天桃猿', '桃猿': '樂天桃猿', '樂天桃猿': '樂天桃猿', 'Lamigo': '樂天桃猿',
-    '富邦': '富邦悍將', '悍將': '富邦悍將', '富邦悍將': '富邦悍將',
-    '味全': '味全龍', '龍': '味全龍', '味全龍': '味全龍',
-    '台鋼': '台鋼雄鷹', '雄鷹': '台鋼雄鷹', '台鋼雄鷹': '台鋼雄鷹',
-}
-
-def resolve_team(team_input: str) -> Optional[str]:
-    """模糊匹配球隊名稱，回傳正式名稱或 None"""
-    if team_input in TEAM_ALIASES.values():
-        return team_input
-    for alias, full_name in TEAM_ALIASES.items():
-        if team_input in alias or alias in team_input:
-            return full_name
-    return None
+from _cpbl_api import post_api, KIND_NAMES, resolve_team
 
 
 def query_games(

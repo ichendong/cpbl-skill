@@ -14,9 +14,8 @@ CPBL 球員數據查詢
 
 import argparse
 import json
+import re
 import sys
-import urllib.request
-import urllib.parse
 from datetime import datetime
 from typing import Optional
 from pathlib import Path
@@ -24,7 +23,7 @@ from bs4 import BeautifulSoup
 
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
-from _cpbl_api import get_csrf_token
+from _cpbl_api import post_api_html
 
 
 def query_stats(
@@ -50,119 +49,93 @@ def query_stats(
     if year is None:
         year = datetime.now().year
 
-    try:
-        # 取得 CSRF token
-        token = get_csrf_token()
+    # position: 01=打擊, 02=投球
+    # sortby: 01=主要指標（打擊率/防禦率）
+    position = '01' if category == 'batting' else '02'
 
-        # 呼叫 API
-        url = 'https://cpbl.com.tw/stats/recordall'
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest',
-            'RequestVerificationToken': token,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+    html = post_api_html('/stats/recordall', {
+        'year': str(year),
+        'kindcode': kind,
+        'position': position,
+        'sortby': '01'
+    })
 
-        # position: 01=打擊, 02=投球
-        # sortby: 01=主要指標（打擊率/防禦率）
-        position = '01' if category == 'batting' else '02'
+    # 解析 HTML
+    soup = BeautifulSoup(html, 'lxml')
+    table = soup.find('table')
 
-        data = urllib.parse.urlencode({
-            'year': str(year),
-            'kindcode': kind,
-            'position': position,
-            'sortby': '01'
-        }).encode('utf-8')
+    if not table:
+        return []
 
-        req = urllib.request.Request(url, data=data, headers=headers, method='POST')
+    rows = table.find_all('tr')
 
-        with urllib.request.urlopen(req, timeout=30) as response:
-            html = response.read().decode('utf-8')
+    # 第一行是標題
+    header_row = rows[0]
+    col_headers = [th.get_text(strip=True) for th in header_row.find_all(['th', 'td'])]
 
-        # 解析 HTML
-        soup = BeautifulSoup(html, 'lxml')
-        table = soup.find('table')
+    # 解析資料行
+    stats = []
+    for row in rows[1:]:
+        cols = row.find_all('td')
+        if not cols:
+            continue
 
-        if not table:
-            return []
+        values = [td.get_text(strip=True) for td in cols]
 
-        rows = table.find_all('tr')
+        # 建立資料字典
+        stat = {}
+        for i, header in enumerate(col_headers):
+            if i < len(values):
+                stat[header] = values[i]
 
-        # 第一行是標題
-        header_row = rows[0]
-        headers = [th.get_text(strip=True) for th in header_row.find_all(['th', 'td'])]
-
-        # 解析資料行
-        stats = []
-        for row in rows[1:]:
-            cols = row.find_all('td')
-            if not cols:
+        # 球隊過濾
+        if team:
+            player_name = stat.get('排名球員', '')
+            if team not in player_name:
                 continue
 
-            values = [td.get_text(strip=True) for td in cols]
+        # 簡化輸出格式
+        raw_name = stat.get('排名球員', '')
 
-            # 建立資料字典
-            stat = {}
-            for i, header in enumerate(headers):
-                if i < len(values):
-                    stat[header] = values[i]
+        # 解析格式：如 "1台鋼雄鷹吳念庭"
+        # 提取排名（第一個數字）
+        rank_match = re.match(r'^(\d+)', raw_name)
+        rank_num = int(rank_match.group(1)) if rank_match else 0
 
-            # 球隊過濾
-            if team:
-                player_name = stat.get('排名球員', '')
-                if team not in player_name:
-                    continue
+        # 移除排名數字，剩下的格式如 "台鋼雄鷹吳念庭"
+        clean_name = re.sub(r'^\d+', '', raw_name)
 
-            # 簡化輸出格式
-            raw_name = stat.get('排名球員', '')
-
-            # 解析格式：如 "1台鋼雄鷹吳念庭"
-            # 提取排名（第一個數字）
-            import re
-            rank_match = re.match(r'^(\d+)', raw_name)
-            rank_num = int(rank_match.group(1)) if rank_match else 0
-
-            # 移除排名數字，剩下的格式如 "台鋼雄鷹吳念庭"
-            clean_name = re.sub(r'^\d+', '', raw_name)
-
-            player_info = {
-                'rank': rank_num,
-                'player': clean_name,  # 包含球隊+球員名，保留原始資訊
-            }
-
-            # 加入主要數據
-            if category == 'batting':
-                player_info.update({
-                    'avg': stat.get('打擊率'),
-                    'games': stat.get('出賽數'),
-                    'hits': stat.get('安打'),
-                    'hr': stat.get('全壘打'),
-                    'rbi': stat.get('打點'),
-                    'runs': stat.get('得分'),
-                })
-            else:
-                player_info.update({
-                    'era': stat.get('防禦率'),
-                    'wins': stat.get('勝'),
-                    'losses': stat.get('敗'),
-                    'saves': stat.get('救援'),
-                    'strikeouts': stat.get('奪三振'),
-                })
-
-            stats.append(player_info)
-
-        # 限制筆數
-        if top:
-            stats = stats[:top]
-
-        return stats
-
-    except Exception as e:
-        return {
-            'error': str(e),
-            'message': '無法取得球員數據',
-            'data': []
+        player_info = {
+            'rank': rank_num,
+            'player': clean_name,  # 包含球隊+球員名，保留原始資訊
         }
+
+        # 加入主要數據
+        if category == 'batting':
+            player_info.update({
+                'avg': stat.get('打擊率'),
+                'games': stat.get('出賽數'),
+                'hits': stat.get('安打'),
+                'hr': stat.get('全壘打'),
+                'rbi': stat.get('打點'),
+                'runs': stat.get('得分'),
+            })
+        else:
+            player_info.update({
+                'era': stat.get('防禦率'),
+                'wins': stat.get('勝'),
+                'losses': stat.get('敗'),
+                'saves': stat.get('救援'),
+                'strikeouts': stat.get('奪三振'),
+            })
+
+        stats.append(player_info)
+
+    # 限制筆數
+    if top:
+        stats = stats[:top]
+
+    return stats
 
 
 def main():
@@ -210,7 +183,7 @@ def main():
         if args.output == 'json':
             print(json.dumps(stats, ensure_ascii=False, indent=2))
         else:
-            if not stats or isinstance(stats, dict):
+            if not stats:
                 print('沒有找到球員數據')
                 return
 
@@ -219,9 +192,9 @@ def main():
 
             for i, s in enumerate(stats, 1):
                 if args.category == 'batting':
-                    print(f"{i}. {s['name']} ({s.get('team', '')}) - 打擊率: {s.get('avg', '')} HR: {s.get('hr', '')} RBI: {s.get('rbi', '')}")
+                    print(f"{i}. {s['player']} - 打擊率: {s.get('avg', '')} HR: {s.get('hr', '')} RBI: {s.get('rbi', '')}")
                 else:
-                    print(f"{i}. {s['name']} ({s.get('team', '')}) - 防禦率: {s.get('era', '')} 勝: {s.get('wins', '')} 敗: {s.get('losses', '')}")
+                    print(f"{i}. {s['player']} - 防禦率: {s.get('era', '')} 勝: {s.get('wins', '')} 敗: {s.get('losses', '')}")
 
     except Exception as e:
         print(json.dumps({'error': str(e)}, ensure_ascii=False), file=sys.stderr)

@@ -20,7 +20,7 @@ import urllib.parse
 import urllib.error
 from pathlib import Path
 from datetime import datetime, timedelta
-from typing import Optional, Any
+from typing import Optional
 
 # 快取檔案路徑（依據 TASK-001 要求）
 TOKEN_CACHE_FILE = Path('/tmp/cpbl_csrf_token.txt')
@@ -101,7 +101,7 @@ class CPBLAPI:
         
         return self.csrf_token
     
-    def _build_request(self, endpoint: str, data: dict) -> tuple[urllib.request.Request, bytes]:
+    def _build_request(self, endpoint: str, data: dict) -> urllib.request.Request:
         """
         建立 POST 請求物件
         
@@ -110,7 +110,7 @@ class CPBLAPI:
             data: POST 資料
         
         Returns:
-            (Request, encoded_data) tuple
+            Request 物件
         """
         if not self._is_token_valid():
             self.fetch_csrf_token()
@@ -124,9 +124,9 @@ class CPBLAPI:
         }
         post_data = urllib.parse.urlencode(data).encode('utf-8')
         req = urllib.request.Request(url, data=post_data, headers=headers, method='POST')
-        return req, post_data
+        return req
     
-    def _send_request(self, endpoint: str, data: dict, parse_json: bool = True) -> Any:
+    def _send_request(self, endpoint: str, data: dict, parse_json: bool = True) -> dict | str:
         """
         發送 POST 請求，支援 JSON 和 HTML 回應
         
@@ -138,7 +138,7 @@ class CPBLAPI:
         Returns:
             JSON dict 或 HTML 字串
         """
-        req, post_data = self._build_request(endpoint, data)
+        req = self._build_request(endpoint, data)
         
         try:
             with urllib.request.urlopen(req, timeout=30) as response:
@@ -147,7 +147,7 @@ class CPBLAPI:
         except urllib.error.HTTPError as e:
             if e.code in (401, 403):
                 self.fetch_csrf_token(force_refresh=True)
-                req, post_data = self._build_request(endpoint, data)
+                req = self._build_request(endpoint, data)
                 with urllib.request.urlopen(req, timeout=30) as response:
                     body = response.read().decode('utf-8')
                     return json.loads(body) if parse_json else body

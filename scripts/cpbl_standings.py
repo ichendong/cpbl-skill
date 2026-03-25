@@ -16,15 +16,13 @@ CPBL 戰績排名查詢
 import argparse
 import json
 import sys
-import urllib.request
-import urllib.parse
 from datetime import datetime
 from typing import Optional
 from pathlib import Path
 
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
-from _cpbl_api import get_csrf_token
+from _cpbl_api import post_api_html
 
 
 def query_standings(
@@ -45,27 +43,10 @@ def query_standings(
         year = datetime.now().year
 
     try:
-        # 取得 CSRF token
-        token = get_csrf_token()
-
-        # 直接呼叫 API（返回 HTML 而非 JSON）
-        url = 'https://cpbl.com.tw/standings/seasonaction'
-        headers = {
-            'Content-Type': 'application/x-www-form-urlencoded',
-            'X-Requested-With': 'XMLHttpRequest',
-            'RequestVerificationToken': token,
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-
-        data = urllib.parse.urlencode({
+        html = post_api_html('/standings/seasonaction', {
             'year': str(year),
             'kindCode': kind
-        }).encode('utf-8')
-
-        req = urllib.request.Request(url, data=data, headers=headers, method='POST')
-
-        with urllib.request.urlopen(req, timeout=30) as response:
-            html = response.read().decode('utf-8')
+        })
 
         # 檢查 HTML 中是否有資料行
         has_data = '<td' in html

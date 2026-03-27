@@ -22,7 +22,7 @@ from typing import Optional
 
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
-from _cpbl_api import post_api, KIND_NAMES, resolve_team
+from _cpbl_api import post_api, KIND_NAMES, resolve_team_cli, validate_date, validate_month
 
 
 def query_schedule(
@@ -88,14 +88,16 @@ def query_schedule(
             if team not in away and team not in home:
                 continue
         
-        # 檢查是否已開打
-        # 注意：API 對未開打的比賽回傳 0，不是 null
-        # 用 IsPlayBall 和 GameResult 判斷是否已完成
+        # 檢查是否已完成
         away_score = g.get('VisitingScore')
         home_score = g.get('HomeScore')
         is_play_ball = g.get('IsPlayBall') == 'Y'
         has_result = bool(g.get('GameResult'))
-        is_completed = is_play_ball or has_result or (away_score is not None and home_score is not None and (away_score != 0 or home_score != 0))
+        has_nonzero_score = (
+            away_score is not None and home_score is not None
+            and (away_score != 0 or home_score != 0)
+        )
+        is_completed = is_play_ball or has_result or has_nonzero_score
         
         # 預設只顯示未來賽程
         if not include_completed and is_completed:
@@ -170,15 +172,14 @@ def main():
     args = parser.parse_args()
     
     # 球隊名稱模糊匹配
-    team_input = args.team
-    team = None
-    if team_input:
-        team = resolve_team(team_input)
-        if team:
-            if team != team_input:
-                print(f'✅ 「{team_input}」→「{team}」', file=sys.stderr)
-        else:
-            print(f'⚠️ 找不到球隊「{team_input}」', file=sys.stderr)
+    team = resolve_team_cli(args.team)
+
+    # 驗證日期/月份格式
+    if args.date:
+        validate_date(args.date)
+    if args.month:
+        validate_month(args.month)
+
     # 顯示賽事類型
     kind_name = KIND_NAMES.get(args.kind, '未知')
     print(f'✅ 賽事類型：{kind_name} ({args.kind})', file=sys.stderr)

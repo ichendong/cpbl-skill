@@ -21,7 +21,7 @@ from typing import Optional
 
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
-from _cpbl_api import post_api, KIND_NAMES, resolve_team, resolve_team_cli, validate_date, validate_month
+from _cpbl_api import post_api, KIND_NAMES, resolve_team_cli, validate_date, validate_month
 
 
 def query_games(

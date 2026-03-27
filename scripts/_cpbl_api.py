@@ -253,13 +253,15 @@ def resolve_team_cli(team_input: Optional[str]) -> Optional[str]:
 
 
 def validate_date(value: str) -> str:
-    """驗證日期格式 YYYY-MM-DD，無效則印出錯誤並 exit"""
-    try:
-        datetime.strptime(value, '%Y-%m-%d')
-        return value
-    except ValueError:
-        print(f'⚠️ --date 格式應為 YYYY-MM-DD，例如 2025-03-29', file=sys.stderr)
-        sys.exit(1)
+    """驗證日期格式 YYYY-MM-DD（嚴格零補齊），無效則印出錯誤並 exit"""
+    if len(value) == 10 and value[4] == '-' and value[7] == '-':
+        try:
+            datetime.strptime(value, '%Y-%m-%d')
+            return value
+        except ValueError:
+            pass
+    print(f'⚠️ --date 格式應為 YYYY-MM-DD，例如 2025-03-29', file=sys.stderr)
+    sys.exit(1)
 
 
 def validate_month(value: str) -> str:

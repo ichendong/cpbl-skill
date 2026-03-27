@@ -23,7 +23,7 @@ from bs4 import BeautifulSoup
 
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
-from _cpbl_api import post_api_html, resolve_team_cli, TEAM_ALIASES
+from _cpbl_api import post_api_html, resolve_team, resolve_team_cli, TEAM_ALIASES
 
 
 def query_stats(
@@ -73,6 +73,14 @@ def query_stats(
     header_row = rows[0]
     col_headers = [th.get_text(strip=True) for th in header_row.find_all(['th', 'td'])]
 
+    # 預先彙整指定球隊的所有別名（含正式名稱），用於前綴匹配
+    team_prefixes: set[str] = set()
+    if team:
+        team_prefixes.add(team)
+        for alias, full_name in TEAM_ALIASES.items():
+            if full_name == team:
+                team_prefixes.add(alias)
+
     # 解析資料行
     stats = []
     for row in rows[1:]:
@@ -88,29 +96,21 @@ def query_stats(
             if i < len(values):
                 stat[header] = values[i]
 
-        # 球隊過濾（用正式名稱匹配）
-        if team:
-            player_name = stat.get('排名球員', '')
-            # 檢查是否包含該球隊的正式名稱或任何別名
-            team_matched = team in player_name
-            if not team_matched:
-                for alias, full_name in TEAM_ALIASES.items():
-                    if full_name == team and alias in player_name:
-                        team_matched = True
-                        break
-            if not team_matched:
-                continue
-
         # 簡化輸出格式
         raw_name = stat.get('排名球員', '')
 
         # 解析格式：如 "1台鋼雄鷹吳念庭"
+        # 移除排名數字，剩下的格式如 "台鋼雄鷹吳念庭"
+        clean_name = re.sub(r'^\d+', '', raw_name)
+
+        # 球隊過濾（用前綴匹配去除排名後的球員名稱）
+        if team_prefixes:
+            if not any(clean_name.startswith(prefix) for prefix in team_prefixes):
+                continue
+
         # 提取排名（第一個數字）
         rank_match = re.match(r'^(\d+)', raw_name)
         rank_num = int(rank_match.group(1)) if rank_match else 0
-
-        # 移除排名數字，剩下的格式如 "台鋼雄鷹吳念庭"
-        clean_name = re.sub(r'^\d+', '', raw_name)
 
         player_info = {
             'rank': rank_num,
@@ -178,8 +178,8 @@ def main():
 
     args = parser.parse_args()
 
-    # 球隊名稱模糊匹配
-    team = resolve_team_cli(args.team)
+    # 球隊名稱模糊匹配（未知球隊保留原始輸入做 fallback，避免取消過濾）
+    team = resolve_team_cli(args.team) or args.team
 
     try:
         stats = query_stats(

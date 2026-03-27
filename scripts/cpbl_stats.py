@@ -23,7 +23,7 @@ from bs4 import BeautifulSoup
 
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
-from _cpbl_api import post_api_html
+from _cpbl_api import post_api_html, resolve_team_cli, TEAM_ALIASES
 
 
 def query_stats(
@@ -88,10 +88,17 @@ def query_stats(
             if i < len(values):
                 stat[header] = values[i]
 
-        # 球隊過濾
+        # 球隊過濾（用正式名稱匹配）
         if team:
             player_name = stat.get('排名球員', '')
-            if team not in player_name:
+            # 檢查是否包含該球隊的正式名稱或任何別名
+            team_matched = team in player_name
+            if not team_matched:
+                for alias, full_name in TEAM_ALIASES.items():
+                    if full_name == team and alias in player_name:
+                        team_matched = True
+                        break
+            if not team_matched:
                 continue
 
         # 簡化輸出格式
@@ -171,11 +178,14 @@ def main():
 
     args = parser.parse_args()
 
+    # 球隊名稱模糊匹配
+    team = resolve_team_cli(args.team)
+
     try:
         stats = query_stats(
             year=args.year,
             category=args.category,
-            team=args.team,
+            team=team,
             kind=args.kind,
             top=args.top
         )

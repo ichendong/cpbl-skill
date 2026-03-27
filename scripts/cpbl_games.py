@@ -21,7 +21,7 @@ from typing import Optional
 
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
-from _cpbl_api import post_api, KIND_NAMES, resolve_team
+from _cpbl_api import post_api, KIND_NAMES, resolve_team, resolve_team_cli, validate_date, validate_month
 
 
 def query_games(
@@ -151,20 +151,13 @@ def main():
     args = parser.parse_args()
     
     # 球隊名稱模糊匹配
-    team_input = args.team
-    team = None
-    if team_input:
-        team = resolve_team(team_input)
-        if team:
-            if team != team_input:
-                print(f'✅ 「{team_input}」→「{team}」', file=sys.stderr)
-        else:
-            print(f'⚠️ 找不到球隊「{team_input}」', file=sys.stderr)
+    team = resolve_team_cli(args.team)
     
-    # 驗證 month 格式
-    if args.month and not (len(args.month) == 7 and args.month[4] == '-'):
-        print(f'⚠️ --month 格式應為 YYYY-MM，例如 2025-03', file=sys.stderr)
-        sys.exit(1)
+    # 驗證日期/月份格式
+    if args.date:
+        validate_date(args.date)
+    if args.month:
+        validate_month(args.month)
     
     # 顯示賽事類型
     kind_name = KIND_NAMES.get(args.kind, '未知')

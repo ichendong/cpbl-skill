@@ -15,6 +15,8 @@ CPBL API 共用模組
 
 import json
 import re
+import sys
+import tempfile
 import urllib.request
 import urllib.parse
 import urllib.error
@@ -22,8 +24,8 @@ from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 
-# 快取檔案路徑（依據 TASK-001 要求）
-TOKEN_CACHE_FILE = Path('/tmp/cpbl_csrf_token.txt')
+# 快取檔案路徑（使用系統暫存目錄，跨平台相容）
+TOKEN_CACHE_FILE = Path(tempfile.gettempdir()) / 'cpbl_csrf_token.txt'
 
 
 class CPBLAPI:
@@ -46,8 +48,8 @@ class CPBLAPI:
                     expire_str = data.get('expire')
                     if expire_str:
                         self.token_expire = datetime.fromisoformat(expire_str)
-            except (json.JSONDecodeError, KeyError, OSError, ValueError):
-                pass
+            except (json.JSONDecodeError, KeyError, OSError, ValueError) as e:
+                print(f'⚠️ CSRF token 快取讀取失敗: {e}', file=sys.stderr)
     
     def _save_token_cache(self):
         """儲存 CSRF token 到快取"""
@@ -235,6 +237,41 @@ def resolve_team(team_input: str) -> Optional[str]:
         if team_input in alias or alias in team_input:
             return full_name
     return None
+
+
+def resolve_team_cli(team_input: Optional[str]) -> Optional[str]:
+    """CLI 用球隊名稱模糊匹配，自動輸出提示訊息到 stderr"""
+    if not team_input:
+        return None
+    team = resolve_team(team_input)
+    if team:
+        if team != team_input:
+            print(f'✅ 「{team_input}」→「{team}」', file=sys.stderr)
+    else:
+        print(f'⚠️ 找不到球隊「{team_input}」', file=sys.stderr)
+    return team
+
+
+def validate_date(value: str) -> str:
+    """驗證日期格式 YYYY-MM-DD，無效則印出錯誤並 exit"""
+    try:
+        datetime.strptime(value, '%Y-%m-%d')
+        return value
+    except ValueError:
+        print(f'⚠️ --date 格式應為 YYYY-MM-DD，例如 2025-03-29', file=sys.stderr)
+        sys.exit(1)
+
+
+def validate_month(value: str) -> str:
+    """驗證月份格式 YYYY-MM，無效則印出錯誤並 exit"""
+    if len(value) == 7 and value[4] == '-':
+        try:
+            datetime.strptime(value + '-01', '%Y-%m-%d')
+            return value
+        except ValueError:
+            pass
+    print(f'⚠️ --month 格式應為 YYYY-MM，例如 2025-03', file=sys.stderr)
+    sys.exit(1)
 
 
 if __name__ == '__main__':

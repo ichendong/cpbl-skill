@@ -1,22 +1,43 @@
-# CPBL Skill - 中華職棒資訊查詢 ⚾🏆
+# CPBL Skill - 中華職棒資訊查詢 ⚾
 
-查詢中華職棒 CPBL 比賽結果、賽程、戰績、球員數據。支援所有賽事類型（例行賽/熱身賽/明星賽/季後賽等）。
+查詢中華職棒 CPBL 即時比分 已完賽結果 賽程 戰績 球員數據 新聞與歷史資料
+
+## v1.3.1 重點
+
+- 新增 `cpbl_live.py` 支援今日或指定日期即時比分
+- `cpbl_games.py` 補上賽後全壘打 中繼點 救援點 觀眾人數
+- 新增 `box_url` 與 `live_url` 方便追詳細戰況
+- 改善完賽判斷 避開官方 `PresentStatus` 不可靠的坑
+- 精簡 `SKILL.md` 結構 改成更清楚的腳本導向說明
+
+## 功能
+
+- 即時比分 `scripts/cpbl_live.py`
+- 已完賽結果 `scripts/cpbl_games.py`
+- 賽程查詢 `scripts/cpbl_schedule.py`
+- 戰績排名 `scripts/cpbl_standings.py`
+- 球員與排行榜數據 `scripts/cpbl_stats.py`
+- 近期新聞 `scripts/cpbl_news.py`
+- 歷史獎項與紀錄 以台灣棒球維基館補強
 
 ## 資料來源
 
 | 來源 | 用途 |
 |------|------|
-| CPBL 官方隱藏 API | 比數、賽程、球員數據 |
-| 台灣棒球維基館 | 年度 MVP、獎項、歷史紀錄 |
+| CPBL 官方站隱藏 API | 即時比分 比賽結果 賽程 戰績 球員數據 |
+| 台灣棒球維基館 | 年度獎項 歷史紀錄 球員生涯資料 |
 
-## 功能
+## 快速開始
 
-- ⚾ 比賽結果查詢（含勝敗投手、MVP）
-- 📅 賽程查詢（日期、球隊過濾）
-- 📊 球員數據（打擊/投球排行榜）
-- 🏆 年度獎項（MVP、新人王等）
-- ⚠️ 戰績排名（API 受限）
+```bash
+uv run scripts/cpbl_live.py --output text
+uv run scripts/cpbl_games.py --date 2026-04-01 --output text
+uv run scripts/cpbl_schedule.py --month 2026-04 --all
+uv run scripts/cpbl_standings.py
+uv run scripts/cpbl_stats.py --year 2025 --category batting --top 10
+uv run scripts/cpbl_news.py --keyword 中信兄弟
+```
 
 ## 授權
 
-僅供學習和個人使用。資料來源為 CPBL 官網與台灣棒球維基館，請遵守各官方使用條款。
+僅供學習與個人使用 請遵守 CPBL 官網與資料來源的使用條款

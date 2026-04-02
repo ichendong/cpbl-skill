@@ -1,166 +1,97 @@
 ---
 name: cpbl
-description: "CPBL (Chinese Professional Baseball League) stats, scores, schedules, player data, and live scores for Taiwan's pro baseball."
-tags: ["cpbl", "baseball", "taiwan", "sports", "scores", "live"]
+description: Query CPBL 中華職棒 scores schedules live games standings player stats news and Taiwan baseball history for Taiwan users Use when the user asks about CPBL 戰績 賽程 即時比分 球員數據 排行榜 新聞 年度獎項 二軍 熱身賽 總冠軍賽 or historical CPBL facts
 ---
 
-# CPBL Skill - 中華職棒資訊查詢 ⚾
+# CPBL
 
-Query CPBL game results, schedules, standings, player stats, and **live scores** across all game types.
+Use the bundled scripts for official-site data first.
+Use `web_search` for recent news.
+Use `web_fetch` on 台灣棒球維基館 for awards history or facts the official site does not expose.
 
-## Data Sources
+## Primary workflow
 
-| Source | Description |
-|--------|-------------|
-| CPBL official API | Game results, schedule, standings, player stats |
-| 台灣棒球維基館 | Historical data not available via API |
+1. Pick the narrowest script that matches the request.
+2. Prefer text output for user-facing answers and JSON output for chaining or debugging.
+3. If the official source cannot provide the requested historical fact, fetch 台灣棒球維基館.
+4. If a result looks empty or partial, check `references/api-endpoints.md` before assuming the data does not exist.
 
-### Secondary Source: 台灣棒球維基館
+## Script map
 
-For data that the official API cannot provide (annual MVP, awards, historical records, player career data), use `web_fetch` to scrape [台灣棒球維基館](https://twbsball.dils.tku.edu.tw/).
+- `scripts/cpbl_live.py`  即時比分 今日賽況 指定日期賽況
+- `scripts/cpbl_games.py`  已完賽結果 歷史比賽
+- `scripts/cpbl_schedule.py`  賽程
+- `scripts/cpbl_standings.py`  戰績 排名
+- `scripts/cpbl_stats.py`  球員與排行榜數據
+- `scripts/cpbl_news.py`  近期新聞
 
-**Search URL format:** `https://twbsball.dils.tku.edu.tw/wiki/index.php?title=關鍵字`
-
-Common pages:
-- 年度 MVP: `中華職棒年度最有價值球員`
-- 年度新人王: `中華職棒年度新人王`
-- Player lookup: Player name (include birth year in parentheses)
-
-## Features
-
-| Feature | Script | Source |
-|---------|--------|--------|
-| Game results | `cpbl_games.py` | CPBL official API |
-| Schedule | `cpbl_schedule.py` | CPBL official API |
-| **Live scores** | **`cpbl_live.py`** | **CPBL official API** |
-| Standings | `cpbl_standings.py` | CPBL official API |
-| Player stats | `cpbl_stats.py` | CPBL official API |
-| News | `cpbl_news.py` | web_search |
-| Awards & history | `web_fetch` | 台灣棒球維基館 |
-
-## 🔴 即時比分 (Live Scores)
-
-查詢今日或指定日期的賽事狀態（未開打 / 比賽中 / 已結束）。
+## Common commands
 
 ```bash
-# 查今天即時比分
-uv run scripts/cpbl_live.py
-
-# 查特定日期
-uv run scripts/cpbl_live.py --date 2026-04-01
-
-# 文字格式（推薦給使用者）
 uv run scripts/cpbl_live.py --output text
-
-# 查特定球隊
-uv run scripts/cpbl_live.py --team 兄弟
-
-# 二軍
-uv run scripts/cpbl_live.py --kind D
-```
-
-### 輸出欄位說明
-
-| 欄位 | 說明 |
-|------|------|
-| `status` | `未開打` / `比賽中` / `已結束` / `延賽` / `保留` / `取消` / `比賽暫停` |
-| `away_score` / `home_score` | 即時比分（比賽中會持續更新） |
-| `duration` | 比賽時長（已開打才有） |
-| `winning_pitcher` / `losing_pitcher` | 勝敗投手（已結束才有） |
-| `mvp` | 單場 MVP（已結束才有） |
-| `box_url` | 成績看板連結 |
-| `live_url` | 文字轉播連結 |
-
-### 即時比分限制
-- **資料來源**：CPBL 官方 API `/schedule/getgamedatas`，非 WebSocket 推播
-- **更新頻率**：每次呼叫 API 都會取得最新資料，但不會自動刷新
-- **局數**：API 本身不回傳第幾局，需透過 `box_url` 或 `live_url` 查看詳細戰況
-- **延遲**：官方 API 可能有數分鐘延遲
-- **週一通常沒比賽**，除非連假
-
-## Quick Start
-
-All scripts use `uv run` for dependency management.
-
-### Game Results
-
-```bash
+uv run scripts/cpbl_live.py --date 2026-04-01 --team 兄弟
 uv run scripts/cpbl_games.py --year 2025 --limit 10
-uv run scripts/cpbl_games.py --date 2025-03-29
-uv run scripts/cpbl_games.py --team 中信 --year 2025
-uv run scripts/cpbl_games.py --kind G --year 2026 --limit 5  # 熱身賽
-```
-
-### Schedule
-
-```bash
-uv run scripts/cpbl_schedule.py
-uv run scripts/cpbl_schedule.py --date 2025-03-29
-uv run scripts/cpbl_schedule.py --team 樂天
-uv run scripts/cpbl_schedule.py --month 2025-03 --all
-```
-
-### Standings
-
-```bash
+uv run scripts/cpbl_schedule.py --month 2026-04 --all
 uv run scripts/cpbl_standings.py
-uv run scripts/cpbl_standings.py --kind W  # 二軍
-```
-
-### Player Stats
-
-```bash
 uv run scripts/cpbl_stats.py --year 2025 --category batting --top 10
-uv run scripts/cpbl_stats.py --year 2025 --category pitching --top 5
-uv run scripts/cpbl_stats.py --team 中信 --category batting
-```
-
-### News
-
-```bash
 uv run scripts/cpbl_news.py --keyword 中信兄弟
 ```
 
-## Game Type Codes
+## Game type codes
 
-| Code | Type |
-|------|------|
-| A | 一軍例行賽 (default) |
-| B | 一軍明星賽 |
-| C | 一軍總冠軍賽 |
-| D | 二軍例行賽 |
-| E | 一軍季後挑戰賽 |
-| F | 二軍總冠軍賽 |
-| G | 一軍熱身賽 |
-| H | 未來之星邀請賽 |
-| X | 國際交流賽 |
+- `A` 一軍例行賽 預設
+- `B` 一軍明星賽
+- `C` 一軍總冠軍賽
+- `D` 二軍例行賽
+- `E` 一軍季後挑戰賽
+- `F` 二軍總冠軍賽
+- `G` 一軍熱身賽
+- `H` 未來之星邀請賽
+- `X` 國際交流賽
 
-## ⚠️ 查詢規則
-- **查即時比分**優先使用 `cpbl_live.py`，它合併了已結束 + 進行中 + 未開打的賽事
-- **CPBL 週一通常沒比賽**，除非連假。查賽程從週二開始查。
-- 先確認已存在的賽程快取再查 API，避免重複呼叫。
+## Live score notes
 
-## 賽程快取 (Schedule Cache)
+- Live data is polled from the official source and is not push-based.
+- API data may lag by a few minutes.
+- Inning detail may require opening `box_url` or `live_url`.
+- Monday often has no games unless adjusted by holidays or makeup scheduling.
 
-已快取的賽程存在 `memory/cpbl_schedule_YYYY.md`。查賽程前先確認快取是否過期：
-- 如果賽程檔日期小於等於今天的比賽日期 → 重新查一次覆蓋
-- 如果快取還在有效範圍 → 直接從檔案讀，不用再呼叫 API
+## Schedule cache
 
-使用者問賽程時：
-1. 先讀 `memory/cpbl_schedule_2026.md`（或其他年份）
-2. 如果缺失或過期 → `uv run skills/cpbl/scripts/cpbl_schedule.py --month YYYY-MM --all` 取得全部資料
-3. 更新快取檔案
+If a request is about schedule, check `memory/cpbl_schedule_YYYY.md` first.
+Refresh the cache when the file is missing, stale, or the requested range extends beyond the cached range.
 
-## Dependencies
+Recommended refresh command
 
-Auto-installed via `uv`:
-- `scrapling[ai]` — CSRF token fetching
-- `beautifulsoup4` — HTML parsing
-- `lxml` — Fast parser
+```bash
+uv run skills/cpbl/scripts/cpbl_schedule.py --month YYYY-MM --all
+```
 
-## Notes
+## History and awards
 
-- Data source: CPBL official website (cpbl.com.tw)
-- CSRF token cached for 1 hour (`~/.cache/cpbl_api/`)
-- Standings API currently limited (returns headers only)
-- For learning and personal use only. Please follow CPBL terms of service.
+Use 台灣棒球維基館 for MVP 新人王 歷史紀錄 球員生涯資料 or older facts that the official site does not return.
+Search URL format
+
+```text
+https://twbsball.dils.tku.edu.tw/wiki/index.php?title=關鍵字
+```
+
+Common pages
+
+- `中華職棒年度最有價值球員`
+- `中華職棒年度新人王`
+- `球員姓名`
+
+## References
+
+Read these only when needed
+
+- `references/api-endpoints.md`  official-site endpoint behavior and quirks
+- `references/summary.md`  project background and current limitations
+- `references/test-report.md`  prior investigation details
+
+## Known limits
+
+- Some official endpoints return HTML fragments instead of JSON.
+- Some standings and schedule flows are brittle because the site relies on AJAX plus CSRF.
+- If a script returns partial data, do not invent missing values. State the limit and fall back to another source when possible.

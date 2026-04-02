@@ -14,7 +14,10 @@ CPBL 比賽結果查詢
 
 import argparse
 import json
+import re
 import sys
+import urllib.parse
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -22,6 +25,85 @@ from typing import Optional
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
 from _cpbl_api import post_api, KIND_NAMES, resolve_team_cli, validate_date, validate_month
+
+
+def fetch_box_summary(year: str, kind: str, game_sno: str) -> dict:
+    """從 /box/getlive 補抓已完賽詳細資料"""
+    headers = {'User-Agent': 'Mozilla/5.0'}
+    url = f'https://cpbl.com.tw/box/index?year={year}&kindCode={kind}&gameSno={game_sno}'
+    req = urllib.request.Request(url, headers=headers)
+    html = urllib.request.urlopen(req, timeout=30).read().decode('utf-8', 'ignore')
+
+    token_match = re.search(r'name="__RequestVerificationToken"[^>]*value="([^"]+)"', html)
+    if not token_match:
+        return {}
+
+    post_data = urllib.parse.urlencode({
+        '__RequestVerificationToken': token_match.group(1),
+        'GameSno': str(game_sno),
+        'KindCode': kind,
+        'Year': str(year),
+        'PrevOrNext': '',
+        'PresentStatus': '',
+    }).encode('utf-8')
+
+    live_req = urllib.request.Request(
+        'https://cpbl.com.tw/box/getlive',
+        data=post_data,
+        headers={
+            **headers,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        method='POST',
+    )
+    response = urllib.request.urlopen(live_req, timeout=30).read().decode('utf-8', 'ignore')
+    payload = json.loads(response)
+    if not payload.get('Success'):
+        return {}
+
+    summary: dict = {}
+    curt = json.loads(payload.get('CurtGameDetailJson') or '{}')
+    batting = json.loads(payload.get('BattingJson') or '[]')
+    pitching = json.loads(payload.get('PitchingJson') or '[]')
+
+    attendance = curt.get('AudienceCntBackend') or curt.get('AudienceCnt')
+    if attendance is not None:
+        summary['attendance'] = int(attendance)
+
+    homeruns = []
+    for b in batting:
+        hr = int(b.get('HomeRunCnt') or 0)
+        if hr > 0:
+            item = {
+                'player': b.get('HitterName'),
+                'team': 'away' if str(b.get('VisitingHomeType')) == '1' else 'home',
+                'count': hr,
+            }
+            if int(b.get('GrandSlamHomerunCnt') or 0) > 0:
+                item['grand_slam'] = True
+            homeruns.append(item)
+    if homeruns:
+        summary['home_runs'] = homeruns
+
+    holds = []
+    saves = []
+    closer_name = curt.get('CloserPitcherName')
+    for p in pitching:
+        rp = int(p.get('ReliefPointCnt') or 0)
+        sp = int(p.get('SavePointCnt') or 0)
+        team_side = 'away' if str(p.get('VisitingHomeType')) == '1' else 'home'
+        if rp > 0:
+            holds.append({'player': p.get('PitcherName'), 'team': team_side, 'count': rp})
+        is_real_save = str(p.get('IsSaveOK')) == '1' or (closer_name and p.get('PitcherName') == closer_name and sp > 0)
+        if is_real_save:
+            saves.append({'player': p.get('PitcherName'), 'team': team_side, 'count': max(sp, 1)})
+    if holds:
+        summary['holds'] = holds
+    if saves:
+        summary['saves'] = saves
+
+    return summary
 
 
 def query_games(
@@ -81,30 +163,50 @@ def query_games(
             if team not in away and team not in home:
                 continue
         
-        # 只顯示已經打完的比賽（有比分）
         away_score = g.get('VisitingScore')
         home_score = g.get('HomeScore')
         has_score = away_score is not None and home_score is not None
-        
+
+        # 只保留已完賽場次 CPBL 的 PresentStatus 不可靠 已完賽常常也標 1
+        game_end = g.get('GameDateTimeE')
+        ended_by_time = False
+        if game_end:
+            try:
+                ended_by_time = datetime.fromisoformat(game_end) <= datetime.now()
+            except ValueError:
+                ended_by_time = False
+        if not (has_score and ended_by_time):
+            continue
+
         # 轉換成統一格式
         game_data = {
             'date': g.get('GameDate', '')[:10],
+            'game_sno': g.get('GameSno'),
             'away_team': g.get('VisitingTeamName'),
             'home_team': g.get('HomeTeamName'),
-            'away_score': away_score if has_score else None,
-            'home_score': home_score if has_score else None,
+            'away_score': int(away_score) if has_score else None,
+            'home_score': int(home_score) if has_score else None,
             'venue': g.get('FieldAbbe'),
+            'duration': g.get('GameDuringTime') or None,
+            'box_url': f"https://cpbl.com.tw/box/index?year={g.get('Year', year)}&kindCode={g.get('KindCode', kind)}&gameSno={g.get('GameSno')}",
+            'live_url': f"https://cpbl.com.tw/box/live?year={g.get('Year', year)}&kindCode={g.get('KindCode', kind)}&gameSno={g.get('GameSno')}",
         }
-        
-        # 如果有勝敗投手資訊，也加入
-        if has_score:
-            if g.get('WinningPitcherName'):
-                game_data['winning_pitcher'] = g.get('WinningPitcherName')
-            if g.get('LoserPitcherName'):
-                game_data['losing_pitcher'] = g.get('LoserPitcherName')
-            if g.get('MvpName'):
-                game_data['mvp'] = g.get('MvpName')
-        
+
+        if g.get('WinningPitcherName'):
+            game_data['winning_pitcher'] = g.get('WinningPitcherName')
+        if g.get('LoserPitcherName'):
+            game_data['losing_pitcher'] = g.get('LoserPitcherName')
+        if g.get('CloserName'):
+            game_data['save_pitcher'] = g.get('CloserName')
+        if g.get('MvpName'):
+            game_data['mvp'] = g.get('MvpName')
+
+        try:
+            extra = fetch_box_summary(str(g.get('Year', year)), g.get('KindCode', kind), str(g.get('GameSno')))
+            game_data.update(extra)
+        except Exception as e:
+            game_data['detail_fetch_error'] = str(e)
+
         games.append(game_data)
     
     # 排序（最新在前）
@@ -194,8 +296,28 @@ def main():
                 if g.get('away_score') is not None:
                     score = f"{g['away_score']}:{g['home_score']}"
                     print(f"[{g['date']}] {g['away_team']} {score} {g['home_team']} @ {g['venue']}")
+                    details = []
                     if g.get('winning_pitcher'):
-                        print(f"  勝: {g['winning_pitcher']} 敗: {g.get('losing_pitcher', '')}")
+                        details.append(f"勝 {g['winning_pitcher']}")
+                    if g.get('losing_pitcher'):
+                        details.append(f"敗 {g['losing_pitcher']}")
+                    if g.get('save_pitcher'):
+                        details.append(f"救援 {g['save_pitcher']}")
+                    if g.get('mvp'):
+                        details.append(f"MVP {g['mvp']}")
+                    if g.get('attendance') is not None:
+                        details.append(f"觀眾 {g['attendance']}")
+                    if details:
+                        print("  " + " | ".join(details))
+                    if g.get('home_runs'):
+                        hr_text = ' '.join(f"{x['player']} {x['count']}轟" + (' 滿貫' if x.get('grand_slam') else '') for x in g['home_runs'])
+                        print(f"  全壘打: {hr_text}")
+                    if g.get('holds'):
+                        hold_text = ' '.join(f"{x['player']} {x['count']}H" for x in g['holds'])
+                        print(f"  中繼點: {hold_text}")
+                    if g.get('saves'):
+                        save_text = ' '.join(f"{x['player']} {x['count']}SV" for x in g['saves'])
+                        print(f"  救援點: {save_text}")
                 else:
                     print(f"[{g['date']}] {g['away_team']} vs {g['home_team']} @ {g['venue']}")
     

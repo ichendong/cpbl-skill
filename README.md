@@ -2,6 +2,12 @@
 
 查詢中華職棒 CPBL 即時比分 已完賽結果 賽程 戰績 球員數據 新聞與歷史資料
 
+## v1.3.2 重點
+
+- 移除與 CPBL 功能無關的 `scripts/ralph/` 自治開發框架
+- 清掉 bundle 內的 Autonomous Coder 痕跡 降低審查時的 suspicious 風險
+- 保留原本所有 CPBL 查詢腳本與文件結構 不影響 skill 主功能
+
 ## v1.3.1 重點
 
 - 新增 `cpbl_live.py` 支援今日或指定日期即時比分

@@ -3,8 +3,6 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #     "scrapling[ai]",
-#     "beautifulsoup4",
-#     "lxml",
 # ]
 # ///
 """
@@ -82,13 +80,10 @@ class CPBLAPI:
         
         # 使用 scrapling DynamicFetcher 取得頁面
         from scrapling.fetchers import DynamicFetcher
-        from bs4 import BeautifulSoup
-        
-        # 從 schedule 頁面取得 token
+        # 從 schedule 頁面取得 token（直接用 regex 無需 HTML parser）
         url = f'{self.BASE_URL}/schedule?KindCode=A'
         page = DynamicFetcher.fetch(url, wait=5, headless=True)
-        soup = BeautifulSoup(page.body, 'lxml')
-        html = str(soup)
+        html = page.body if hasattr(page, 'body') else str(page)
         
         # 用正則找出 token
         matches = re.findall(r"RequestVerificationToken['\"]?\s*[:=]\s*['\"]([^'\"]{20,})", html)

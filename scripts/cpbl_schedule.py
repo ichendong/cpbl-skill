@@ -3,8 +3,6 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #     "scrapling[ai]",
-#     "beautifulsoup4",
-#     "lxml",
 # ]
 # ///
 """

@@ -4,7 +4,6 @@
 # dependencies = [
 #     "scrapling[ai]",
 #     "beautifulsoup4",
-#     "lxml",
 # ]
 # ///
 """
@@ -61,7 +60,7 @@ def query_stats(
     })
 
     # 解析 HTML
-    soup = BeautifulSoup(html, 'lxml')
+    soup = BeautifulSoup(html, 'html.parser')
     table = soup.find('table')
 
     if not table:

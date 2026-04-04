@@ -3,3 +3,7 @@ __pycache__/
 *.pyo
 .env
 .cache/
+
+# Python bytecode
+__pycache__/
+*.pyc

@@ -3,8 +3,7 @@
 # requires-python = ">=3.11"
 # dependencies = [
 #     "scrapling[ai]",
-#     "beautifulsoup4",
-#     "lxml",
+# #     "lxml",
 # ]
 # ///
 """
@@ -23,7 +22,6 @@ from typing import Optional
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
 from _cpbl_api import post_api, post_api_html, KIND_NAMES, resolve_team_cli, validate_date, get_api
-from bs4 import BeautifulSoup
 
 TZ_TW = timezone(timedelta(hours=8))
 
@@ -82,70 +80,88 @@ def fetch_games_for_date(target_date: str, kind: str = 'A') -> list[dict]:
     return [g for g in raw_games if g.get('GameDate', '')[:10] == target_date]
 
 
-def fetch_box_inning(year: str, kind: str, game_sno: str) -> Optional[dict]:
+def fetch_live_inning(year: str, kind: str, game_sno: str) -> Optional[dict]:
     """
-    從 /box/gamedata 取得即時比賽的局數與逐局比分
-    用於比賽中的場次，顯示第幾局上下半
+    從 /box/getlive 的 LiveLogJson + CurtGameDetailJson 取得即時局數
+    
+    策略：
+    1. 從 CurtGameDetailJson 取 GameStatus 和分數
+    2. 從 ScoreboardJson 取最大局數
+    3. 從 LiveLogJson 取最後一筆的 InningSeq + VisitingHomeType（最準確）
     
     Returns: dict with inning info or None
+        {'inning': int, 'half': str, 'display': str, 'scores': dict}
     """
     try:
-        api = get_api()
-        html = api.post_api_html('/box/gamedata', {
+        result = post_api('/box/getlive', {
             'year': year,
             'kindCode': kind,
             'gameSno': game_sno,
         })
         
-        soup = BeautifulSoup(html, 'lxml')
+        if not result.get('Success'):
+            return None
         
-        # 嘗試找出 curtRecordSeqs 相關的局數資訊
-        # CPBL 透過 Angular 渲染，但 gamedata endpoint 可能回傳 JSON 或有資料的 HTML
-        # 另一個方案：解析 ng-binding 或 script 標籤中的初始資料
+        # CurtGameDetailJson 是當前比賽的詳細資料
+        curt_raw = result.get('CurtGameDetailJson')
+        if not curt_raw:
+            return None
         
-        # 檢查是否為 JSON 回應
-        try:
-            data = json.loads(html)
-            return data
-        except (json.JSONDecodeError, ValueError):
-            pass
+        curt = json.loads(curt_raw)
+        game_status = curt.get('GameStatus')
         
-        # 嘗試從 inline script 取得 $scope 資料
-        for script in soup.find_all('script'):
-            text = script.string or ''
-            if 'curtRecordSeqs' in text or 'curtSeq' in text or 'InningSeq' in text:
-                # 找局數
-                import re
-                seq_match = re.search(r'InningSeq["\s:]+(\d+)', text)
-                type_match = re.search(r'VisitingHomeType["\s:]+(\d+)', text)
-                if seq_match:
-                    inning = int(seq_match.group(1))
-                    half = '上' if type_match and type_match.group(1) == '1' else '下'
-                    return {
-                        'inning': inning,
-                        'half': half,
-                        'display': f'第{inning}局{half}半'
-                    }
+        # 只有比賽中 (2) 或已結束 (3) 才有局數
+        if game_status not in (2, 3):
+            return None
         
-        # 從 HTML 表格推算局數
-        # scoreboard 表格每欄是一局
-        inning_headers = soup.select('.scoreboard th')
+        away_score = curt.get('VisitingScore', 0) or 0
+        home_score = curt.get('HomeScore', 0) or 0
+        
+        # 從 ScoreboardJson 取局數
+        sb_raw = result.get('ScoreboardJson')
         max_inning = 0
-        for th in inning_headers:
-            try:
-                n = int(th.get_text(strip=True))
-                if n > max_inning:
-                    max_inning = n
-            except ValueError:
-                continue
+        if sb_raw:
+            scoreboards = json.loads(sb_raw)
+            for sb in scoreboards:
+                seq = sb.get('InningSeq')
+                if seq and isinstance(seq, (int, float)):
+                    max_inning = max(max_inning, int(seq))
         
-        if max_inning > 0:
-            return {'inning': max_inning, 'display': f'第{max_inning}局'}
+        # 從 LiveLogJson 取精確的上下半
+        log_raw = result.get('LiveLogJson')
+        half = None
+        last_inning = 0
+        if log_raw:
+            logs = json.loads(log_raw)
+            if logs:
+                last = logs[-1]
+                last_inning = int(last.get('InningSeq', 0))
+                half_type = last.get('VisitingHomeType')
+                half = '上' if str(half_type) == '1' else '下'
+                # 用 live log 的局數（更準確）
+                max_inning = max(max_inning, last_inning)
         
-        return None
+        if max_inning == 0:
+            return None
+        
+        if not half:
+            half = '下'  # 預設下半
+        
+        if game_status == 3:
+            display = '結束'
+        else:
+            display = f'第{max_inning}局{half}半'
+        
+        return {
+            'inning': max_inning,
+            'half': half,
+            'display': display,
+            'away_score': away_score,
+            'home_score': home_score,
+        }
         
     except Exception as e:
-        print(f'⚠️ box/gamedata 查詢失敗: {e}', file=sys.stderr)
+        print(f'⚠️ getlive 局數查詢失敗: {e}', file=sys.stderr)
         return None
 
 
@@ -195,6 +211,21 @@ def build_live_summary(games_raw: list[dict], date_str: str) -> list[dict]:
             else:
                 status = '未開打'
         
+        # API 延遲修正：PS=1(未開打) 但已有非零比分 → 實為比賽中
+        if status == '未開打' and has_score:
+            away_s = int(away_score or 0)
+            home_s = int(home_score or 0)
+            if away_s > 0 or home_s > 0:
+                status = '比賽中'
+
+        # 延賽推測：API 標已結束但 0:0 且無勝敗投 → 實為延賽
+        if status == '已結束':
+            away_s = int(away_score or 0)
+            home_s = int(home_score or 0)
+            no_pitchers = not g.get('WinningPitcherName') and not g.get('LoserPitcherName')
+            if away_s == 0 and home_s == 0 and no_pitchers:
+                status = '延賽'
+        
         # 比賽時間
         game_time_str = ''
         if g.get('PreExeDate'):
@@ -227,7 +258,14 @@ def build_live_summary(games_raw: list[dict], date_str: str) -> list[dict]:
         
         # 比賽中顯示局數
         if status == '比賽中':
-            # 嘗試從 GameDuringTime 或其他欄位推估局數
+            year = g.get('Year', date_str[:4])
+            kind_code = g.get('KindCode', 'A')
+            sno = g.get('GameSno', '')
+            if sno:
+                inning_info = fetch_live_inning(year, kind_code, sno)
+                if inning_info:
+                    entry['inning'] = inning_info
+                    entry['inning_display'] = inning_info['display']
             if duration:
                 entry['duration'] = duration
         
@@ -301,13 +339,16 @@ def format_text(games: list[dict]) -> str:
     live_count = sum(1 for g in games if g['status'] == '比賽中')
     finished_count = sum(1 for g in games if g['status'] == '已結束')
     upcoming_count = sum(1 for g in games if g['status'] == '未開打')
-    other_count = len(games) - live_count - finished_count - upcoming_count
+    postpone_count = sum(1 for g in games if g['status'] == '延賽')
+    other_count = len(games) - live_count - finished_count - upcoming_count - postpone_count
     
     header_parts = []
     if live_count:
         header_parts.append(f'🔴 進行中 {live_count}')
     if finished_count:
         header_parts.append(f'✅ 已結束 {finished_count}')
+    if postpone_count:
+        header_parts.append(f'🌧️ 延賽 {postpone_count}')
     if upcoming_count:
         header_parts.append(f'⏳ 未開打 {upcoming_count}')
     if other_count:
@@ -342,9 +383,15 @@ def format_text(games: list[dict]) -> str:
         if g.get('venue'):
             lines.append(f'   📍 {g["venue"]}')
         
-        # 比賽中：顯示時長
-        if status == '比賽中' and g.get('duration'):
-            lines.append(f'   ⏱️ 進行 {g["duration"]}')
+        # 比賽中：顯示局數 + 時長
+        if status == '比賽中':
+            live_parts = []
+            if g.get('inning_display'):
+                live_parts.append(f'⚾ {g["inning_display"]}')
+            if g.get('duration'):
+                live_parts.append(f'⏱️ {g["duration"]}')
+            if live_parts:
+                lines.append(f'   {" | ".join(live_parts)}')
         
         # 已結束：勝敗投
         if status == '已結束':

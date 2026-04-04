@@ -2,6 +2,18 @@
 
 查詢中華職棒 CPBL 即時比分 已完賽結果 賽程 戰績 球員數據 新聞與歷史資料
 
+## v1.4.0 重點
+
+- **即時局數顯示**：`cpbl_live.py` 現在能正確顯示比賽進行中的「第N局上/下半」
+  - 改用 `/box/getlive` 的 `CurtGameDetailJson` + `LiveLogJson` 取得精確局數
+  - 舊方案 `/box/gamedata` 無法取得局數（回傳 HTML 空頁）
+  - 注意：`GameDetailJson` 回的是第一場的資料而非當前進行中場次，必須用 `CurtGameDetailJson`
+- **延賽自動偵測**：API 標記已結束但 0:0 無勝敗投 → 自動判為延賽 🌧️
+- **API 延遲修正**：`PresentStatus=1`(未開打) 但已有非零比分 → 修正為比賽中
+- 移除 `cpbl_news.py`（功能已被 `web_search` 取代，維護成本不值得）
+- 移除 `beautifulsoup4`/`lxml` 依賴（不再需要 HTML 解析）
+- CPBL 官網前端正確框架為 **Vue.js**（非 Angular）
+
 ## v1.3.2 重點
 
 - 移除與 CPBL 功能無關的 `scripts/ralph/` 自治開發框架
@@ -23,7 +35,7 @@
 - 賽程查詢 `scripts/cpbl_schedule.py`
 - 戰績排名 `scripts/cpbl_standings.py`
 - 球員與排行榜數據 `scripts/cpbl_stats.py`
-- 近期新聞 `scripts/cpbl_news.py`
+- 近期新聞 直接用 `web_search` 查 CPBL 官網新聞頁
 - 歷史獎項與紀錄 以台灣棒球維基館補強
 
 ## 資料來源
@@ -41,7 +53,7 @@ uv run scripts/cpbl_games.py --date 2026-04-01 --output text
 uv run scripts/cpbl_schedule.py --month 2026-04 --all
 uv run scripts/cpbl_standings.py
 uv run scripts/cpbl_stats.py --year 2025 --category batting --top 10
-uv run scripts/cpbl_news.py --keyword 中信兄弟
+# 近期新聞請用 web_search 搜尋 CPBL 官網
 ```
 
 ## 授權

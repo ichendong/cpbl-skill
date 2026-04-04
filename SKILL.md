@@ -23,7 +23,6 @@ Use `web_fetch` on 台灣棒球維基館 for awards history or facts the officia
 - `scripts/cpbl_schedule.py`  賽程
 - `scripts/cpbl_standings.py`  戰績 排名
 - `scripts/cpbl_stats.py`  球員與排行榜數據
-- `scripts/cpbl_news.py`  近期新聞
 
 ## Common commands
 
@@ -34,7 +33,6 @@ uv run scripts/cpbl_games.py --year 2025 --limit 10
 uv run scripts/cpbl_schedule.py --month 2026-04 --all
 uv run scripts/cpbl_standings.py
 uv run scripts/cpbl_stats.py --year 2025 --category batting --top 10
-uv run scripts/cpbl_news.py --keyword 中信兄弟
 ```
 
 ## Game type codes
@@ -66,6 +64,14 @@ Recommended refresh command
 ```bash
 uv run skills/cpbl/scripts/cpbl_schedule.py --month YYYY-MM --all
 ```
+
+## Postponement info
+
+To check today's postponement announcements, fetch the official news page:
+```
+https://cpbl.com.tw/news
+```
+Look for the latest "延賽公告" entry. The live script now auto-detects postponed games (0:0 + no winning/losing pitcher).
 
 ## History and awards
 

@@ -70,10 +70,10 @@ token = match.group(1) if match else None
 
 ## 技術難題
 
-1. **AJAX 動態載入:** CPBL 使用大量 AJAX，直接抓 HTML 只能看到空表格
+1. **AJAX + HTML 片段回傳:** CPBL 使用大量 AJAX，而且不是回 JSON，要自己解析 HTML 表格
 2. **CSRF 保護:** 每個請求都需要有效的 CSRF token
 3. **沒有公開 JSON API:** 所有資料都以 HTML 片段形式返回
-4. **參數不明:** 某些 endpoints 的參數名稱和格式不清楚
+4. **部分 endpoints 仍不穩:** 某些 endpoints 的參數名稱、回傳結構或可用性仍不穩定
 
 ## 備用資料源
 
@@ -97,13 +97,13 @@ token = match.group(1) if match else None
 
 ## 建議的實作策略
 
-### 方案 A: 解析 HTML (推薦)
-- 優點: 最接近官方資料
-- 缺點: 需要處理 AJAX 和 CSRF
+### 方案 A: 直接打 AJAX endpoint 並解析 HTML（推薦）
+- 優點: 速度較快 且已驗證 `/standings/seasonaction` 可直接取得四張表資料
+- 缺點: 需要處理 CSRF 與欄位變動
 - 作法: 
-  1. 先用 scrapling 抓取完整渲染後的頁面
-  2. 解析 HTML 表格
-  3. 轉換為 JSON
+  1. 先取得有效 token
+  2. POST AJAX endpoint
+  3. 用 BeautifulSoup 解析 HTML 表格
 
 ### 方案 B: 直接打 AJAX Endpoints
 - 優點: 速度較快
@@ -128,3 +128,4 @@ token = match.group(1) if match else None
 ## 更新日誌
 
 - **2026-03-20 19:26**: 初始偵查完成，發現基本 endpoints 結構
+- **2026-04-04 23:49**: 重新驗證 `/standings/seasonaction` 可回傳完整四張表資料 舊的「只有表頭」判斷已失效

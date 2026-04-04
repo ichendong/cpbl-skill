@@ -84,6 +84,8 @@ class CPBLAPI:
         url = f'{self.BASE_URL}/schedule?KindCode=A'
         page = DynamicFetcher.fetch(url, wait=5, headless=True)
         html = page.body if hasattr(page, 'body') else str(page)
+        if isinstance(html, bytes):
+            html = html.decode('utf-8', errors='ignore')
         
         # 用正則找出 token
         matches = re.findall(r"RequestVerificationToken['\"]?\s*[:=]\s*['\"]([^'\"]{20,})", html)

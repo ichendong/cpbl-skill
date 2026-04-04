@@ -10,7 +10,7 @@
 
 | 腳本 | 狀態 | 說明 |
 |------|------|------|
-| cpbl_standings.py | ⚠️  部分通過 | 腳本可執行，但資料抓取返回空陣列 |
+| cpbl_standings.py | ✅ 已修復 | 腳本可執行，且可解析官方 standings HTML 回傳的四張表 |
 | cpbl_schedule.py | ⚠️  部分通過 | 腳本可執行，但資料抓取返回空陣列 |
 | cpbl_games.py | ✅ 框架完成 | 框架正常運作，返回提示訊息 |
 | cpbl_stats.py | ✅ 框架完成 | 框架正常運作，返回提示訊息 |
@@ -20,12 +20,12 @@
 
 ### 1. cpbl_standings.py
 
-**測試指令**:
+**舊測試指令**:
 ```bash
 uv run cpbl_standings.py --year 2024
 ```
 
-**結果**:
+**舊結果**:
 ```json
 {
   "versus": [],
@@ -37,15 +37,11 @@ uv run cpbl_standings.py --year 2024
 }
 ```
 
-**分析**:
-- ✅ 腳本正常執行
-- ✅ JSON 格式正確
-- ✅ 參數解析正常
-- ❌ 資料抓取失敗（返回空陣列）
-
-**原因**:
-- CPBL 官方 AJAX endpoint `/standings/seasonaction` 只返回表格標題，沒有實際資料
-- 可能需要額外的 JavaScript 邏輯或參數
+**2026-04-04 重新驗證**:
+- `/standings/seasonaction` 實際會回傳包含資料列的 HTML 片段
+- 問題不是 endpoint 沒資料 而是早期腳本沒有實作 parser
+- `cpbl_standings.py` 現已改為用 BeautifulSoup 解析四張表
+- 一軍與二軍皆可查 該腳本已不應再視為「只能回空陣列」
 
 ### 2. cpbl_schedule.py
 
@@ -167,10 +163,10 @@ uv run cpbl_news.py --limit 5
 ### 已測試的 Endpoints
 
 1. **`/standings/seasonaction`**
-   - 狀態: ⚠️  部分可用
-   - 問題: 只返回表格標題，沒有資料行
-   - 測試年份: 2024, 2025, 2026
-   - 結果: 所有年份都一樣
+   - 狀態: ✅ 可用
+   - 回傳: 含資料列的 HTML 片段
+   - 補充: 需自行解析四張表 不是 JSON
+   - 更新: 2026-04-04 已重新驗證 舊的「只有表頭」判斷作廢
 
 2. **`/schedule/getoptsaction`**
    - 狀態: ❌ 不可用

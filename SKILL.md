@@ -27,12 +27,12 @@ Use `web_fetch` on 台灣棒球維基館 for awards history or facts the officia
 ## Common commands
 
 ```bash
-uv run scripts/cpbl_live.py --output text
-uv run scripts/cpbl_live.py --date 2026-04-01 --team 兄弟
-uv run scripts/cpbl_games.py --year 2025 --limit 10
-uv run scripts/cpbl_schedule.py --month 2026-04 --all
-uv run scripts/cpbl_standings.py
-uv run scripts/cpbl_stats.py --year 2025 --category batting --top 10
+uv run skills/cpbl/scripts/cpbl_live.py --output text
+uv run skills/cpbl/scripts/cpbl_live.py --date 2026-04-01 --team 兄弟
+uv run skills/cpbl/scripts/cpbl_games.py --year 2025 --limit 10
+uv run skills/cpbl/scripts/cpbl_schedule.py --month 2026-04 --all
+uv run skills/cpbl/scripts/cpbl_standings.py
+uv run skills/cpbl/scripts/cpbl_stats.py --year 2025 --category batting --top 10
 ```
 
 ## Game type codes

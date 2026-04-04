@@ -3,7 +3,8 @@
 ## 任務完成狀態
 
 ✅ **已完成**: 建立 CPBL skill 完整框架
-⚠️  **部分完成**: 資料抓取功能（技術限制）
+✅ **已改善**: `cpbl_standings.py` 已可解析官方 standings HTML 資料
+⚠️  **部分完成**: 部分資料抓取功能仍有技術限制
 
 ## 建立的檔案
 
@@ -13,7 +14,7 @@
 - ✅ `references/test-report.md` - 完整測試報告
 
 ### Python 腳本
-- ✅ `scripts/cpbl_standings.py` - 戰績查詢（框架完成，資料抓取待改進）
+- ✅ `scripts/cpbl_standings.py` - 戰績查詢（已可解析官方 standings 四張表）
 - ✅ `scripts/cpbl_schedule.py` - 賽程查詢（框架完成，資料抓取待改進）
 - ✅ `scripts/cpbl_games.py` - 比賽結果查詢（框架完成）
 - ✅ `scripts/cpbl_stats.py` - 球員數據查詢（框架完成）
@@ -34,27 +35,25 @@
    - 需要 `RequestVerificationToken` header
 
 3. **已發現的 Endpoints**
-   - `/standings/seasonaction` - 戰績資料（只返回標題）
+   - `/standings/seasonaction` - 戰績資料（回傳 HTML 片段 可解析出四張表）
    - `/schedule/getoptsaction` - 賽程選項（500 錯誤）
    - 其他 endpoints 尚未發現
 
-### 無法成功抓取資料的原因
+### 目前仍待改進的點
 
-經過多次測試和偵查，發現以下問題：
+經過重新驗證與修正後 目前狀態如下：
 
-1. **AJAX Endpoint 問題**
-   - `/standings/seasonaction` 返回的 HTML 只有表格標題
-   - 缺少實際的球隊資料行
-   - 可能需要額外的參數或 JavaScript 邏輯
+1. **standings 已可抓取**
+   - `/standings/seasonaction` 會回傳包含資料列的 HTML
+   - 可直接解析出球隊對戰戰績 團隊投球成績 團隊打擊成績 團隊守備成績
+   - 舊的「只有表頭」結論已失效
 
-2. **動態渲染失敗**
-   - 使用 scrapling dynamic mode 仍然只抓到標題
-   - JavaScript 可能需要更長時間載入
-   - 或者資料是透過另一個完全不同的機制載入
+2. **部分其他 endpoints 仍有不穩定性**
+   - 某些 endpoints 仍需要更多參數或會回錯誤
+   - HTML 結構若變動 仍需跟著調整 parser
 
-3. **參數不明**
-   - 某些 endpoints 需要的參數格式不清楚
-   - 例如 `kindCode` 的具體值和意義
+3. **參數與代碼對應仍待持續驗證**
+   - 例如 `kindCode` 在不同頁面可能有不同代碼慣例
 
 ## 測試結果
 
@@ -64,7 +63,8 @@
 - ✅ 參數解析正確
 - ✅ JSON 格式輸出
 - ✅ 錯誤處理機制
-- ❌ 資料抓取失敗（CPBL API 限制）
+- ✅ `cpbl_standings.py` 已可取得並解析官方 standings 資料
+- ⚠️  其他部分腳本仍受 CPBL API 限制或站方結構影響
 
 ### 實際測試範例
 

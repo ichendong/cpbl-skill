@@ -188,7 +188,7 @@ def query_games(
         extra = fetch_box_summary(g['_year'], g['_kind'], str(g['game_sno']))
         return idx, extra
 
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=min(6, len(games) or 1)) as executor:
         futures = {executor.submit(_fetch_detail, (i, g)): i for i, g in enumerate(games)}
         for future in as_completed(futures):
             try:

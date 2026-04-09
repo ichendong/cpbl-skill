@@ -12,51 +12,35 @@ CPBL 比賽結果查詢
 
 import argparse
 import json
-import re
 import sys
-import urllib.parse
-import urllib.request
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
-from _cpbl_api import post_api, KIND_NAMES, resolve_team_cli, validate_date, validate_month
+from _cpbl_api import post_api, fetch_game_datas, KIND_NAMES, resolve_team_cli, validate_date, validate_month
 
 
 def fetch_box_summary(year: str, kind: str, game_sno: str) -> dict:
-    """從 /box/getlive 補抓已完賽詳細資料"""
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    url = f'https://cpbl.com.tw/box/index?year={year}&kindCode={kind}&gameSno={game_sno}'
-    req = urllib.request.Request(url, headers=headers)
-    html = urllib.request.urlopen(req, timeout=30).read().decode('utf-8', 'ignore')
-
-    token_match = re.search(r'name="__RequestVerificationToken"[^>]*value="([^"]+)"', html)
-    if not token_match:
+    """
+    從 /box/getlive 補抓已完賽詳細資料
+    
+    重用共用 CSRF token（透過 post_api），不再對每場比賽發 GET 請求取 token。
+    """
+    try:
+        payload = post_api('/box/getlive', {
+            'GameSno': str(game_sno),
+            'KindCode': kind,
+            'Year': str(year),
+            'PrevOrNext': '',
+            'PresentStatus': '',
+        })
+    except Exception as e:
+        print(f'⚠️ box/getlive 呼叫失敗 (game_sno={game_sno}): {e}', file=sys.stderr)
         return {}
 
-    post_data = urllib.parse.urlencode({
-        '__RequestVerificationToken': token_match.group(1),
-        'GameSno': str(game_sno),
-        'KindCode': kind,
-        'Year': str(year),
-        'PrevOrNext': '',
-        'PresentStatus': '',
-    }).encode('utf-8')
-
-    live_req = urllib.request.Request(
-        'https://cpbl.com.tw/box/getlive',
-        data=post_data,
-        headers={
-            **headers,
-            'X-Requested-With': 'XMLHttpRequest',
-            'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        method='POST',
-    )
-    response = urllib.request.urlopen(live_req, timeout=30).read().decode('utf-8', 'ignore')
-    payload = json.loads(response)
     if not payload.get('Success'):
         return {}
 
@@ -128,20 +112,10 @@ def query_games(
     if year is None:
         year = datetime.now().year
     
-    # 呼叫 API（用該年 1/1 取得整年資料）
-    result = post_api('/schedule/getgamedatas', {
-        'calendar': f'{year}/01/01',
-        'location': '',
-        'kindCode': kind
-    })
+    # 呼叫共用函式取得整年資料（含 TTL 快取）
+    raw_games = fetch_game_datas(year, kind)
     
-    if not result.get('Success'):
-        raise ValueError(f'API 回應失敗: {result}')
-    
-    # GameDatas 是 JSON 字串，需要再解析
-    raw_games = json.loads(result.get('GameDatas', '[]'))
-    
-    # 過濾與轉換資料
+    # 過濾與轉換資料（不含 box detail）
     games = []
     for g in raw_games:
         game_date_str = g.get('GameDate', '')[:10]
@@ -188,6 +162,8 @@ def query_games(
             'duration': g.get('GameDuringTime') or None,
             'box_url': f"https://cpbl.com.tw/box/index?year={g.get('Year', year)}&kindCode={g.get('KindCode', kind)}&gameSno={g.get('GameSno')}",
             'live_url': f"https://cpbl.com.tw/box/live?year={g.get('Year', year)}&kindCode={g.get('KindCode', kind)}&gameSno={g.get('GameSno')}",
+            '_year': str(g.get('Year', year)),
+            '_kind': g.get('KindCode', kind),
         }
 
         if g.get('WinningPitcherName'):
@@ -199,20 +175,32 @@ def query_games(
         if g.get('MvpName'):
             game_data['mvp'] = g.get('MvpName')
 
-        try:
-            extra = fetch_box_summary(str(g.get('Year', year)), g.get('KindCode', kind), str(g.get('GameSno')))
-            game_data.update(extra)
-        except Exception as e:
-            game_data['detail_fetch_error'] = str(e)
-
         games.append(game_data)
     
-    # 排序（最新在前）
+    # 先排序（最新在前），再限制筆數，最後才批次抓取 box detail
     games.sort(key=lambda x: x['date'], reverse=True)
-    
-    # 限制筆數
     if limit:
         games = games[:limit]
+
+    # 並行抓取 box summary（ThreadPoolExecutor）
+    def _fetch_detail(idx_game):
+        idx, g = idx_game
+        extra = fetch_box_summary(g['_year'], g['_kind'], str(g['game_sno']))
+        return idx, extra
+
+    with ThreadPoolExecutor(max_workers=min(6, len(games) or 1)) as executor:
+        futures = {executor.submit(_fetch_detail, (i, g)): i for i, g in enumerate(games)}
+        for future in as_completed(futures):
+            try:
+                idx, extra = future.result()
+                games[idx].update(extra)
+            except Exception as e:
+                games[futures[future]]['detail_fetch_error'] = str(e)
+
+    # 清理內部欄位
+    for g in games:
+        g.pop('_year', None)
+        g.pop('_kind', None)
     
     return games
 

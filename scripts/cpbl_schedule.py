@@ -20,7 +20,7 @@ from typing import Optional
 
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
-from _cpbl_api import post_api, KIND_NAMES, resolve_team_cli, validate_date, validate_month
+from _cpbl_api import fetch_game_datas, KIND_NAMES, resolve_team_cli, validate_date, validate_month
 
 
 def query_schedule(
@@ -50,17 +50,8 @@ def query_schedule(
     if year is None:
         year = datetime.now().year
     
-    # 呼叫 API
-    result = post_api('/schedule/getgamedatas', {
-        'calendar': f'{year}/01/01',
-        'location': '',
-        'kindCode': kind
-    })
-    
-    if not result.get('Success'):
-        raise ValueError(f'API 回應失敗: {result}')
-    
-    raw_games = json.loads(result.get('GameDatas', '[]'))
+    # 呼叫共用函式取得整年資料（含 TTL 快取）
+    raw_games = fetch_game_datas(year, kind)
     
     # 今日日期（用於過濾未來賽程）
     today = date.today()

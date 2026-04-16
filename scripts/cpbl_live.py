@@ -21,7 +21,7 @@ from typing import Optional
 
 # 引入共用模組
 sys.path.insert(0, str(Path(__file__).parent))
-from _cpbl_api import post_api, post_api_html, KIND_NAMES, resolve_team_cli, validate_date, get_api
+from _cpbl_api import post_api, fetch_game_datas, KIND_NAMES, resolve_team_cli, validate_date, get_api
 
 TZ_TW = timezone(timedelta(hours=8))
 
@@ -64,17 +64,8 @@ def fetch_games_for_date(target_date: str, kind: str = 'A') -> list[dict]:
     
     Returns: 原始 game dict 列表
     """
-    year = target_date[:4]
-    result = post_api('/schedule/getgamedatas', {
-        'calendar': f'{year}/01/01',
-        'location': '',
-        'kindCode': kind
-    })
-    
-    if not result.get('Success'):
-        raise ValueError(f'API 回應失敗: {result}')
-    
-    raw_games = json.loads(result.get('GameDatas', '[]'))
+    year = int(target_date[:4])
+    raw_games = fetch_game_datas(year, kind)
     
     # 過濾指定日期
     return [g for g in raw_games if g.get('GameDate', '')[:10] == target_date]
@@ -206,7 +197,7 @@ def build_live_summary(games_raw: list[dict], date_str: str) -> list[dict]:
                         status = '比賽中'  # 時間到了但 API 還沒更新
                     else:
                         status = '未開打'
-                except:
+                except (ValueError, TypeError):
                     status = '未開打'
             else:
                 status = '未開打'
@@ -232,7 +223,7 @@ def build_live_summary(games_raw: list[dict], date_str: str) -> list[dict]:
             try:
                 dt = datetime.fromisoformat(g['PreExeDate'])
                 game_time_str = dt.strftime('%H:%M')
-            except:
+            except (ValueError, TypeError):
                 game_time_str = ''
         
         # 比賽時長

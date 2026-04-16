@@ -1,9 +1,1 @@
 __pycache__/
-*.pyc
-*.pyo
-.env
-.cache/
-
-# Python bytecode
-__pycache__/
-*.pyc

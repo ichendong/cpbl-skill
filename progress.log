@@ -1,0 +1,9 @@
+1. 發現官方隱藏 API `/box/gamedata` 可直接獲取詳細的 Box Score 數據（包含 `BattingJson` 與 `PitchingJson`），無需解析 Angular HTML 模板。
+2. 修改 `cpbl_live.py`：
+   - 新增 `fetch_box_score` 函式。
+   - 在 `build_live_summary` 中，當比賽狀態為「已結束」時，優先調用 `/box/gamedata` 並解析 `BattingJson` 提取 MVP，解析 `PitchingJson` 提取勝投與敗投。
+   - 保留原有的 `getgamedatas` 數據作為備援。
+3. 測試結果：
+   - 成功獲取 2026-04-15 賽事 (#37, #38, #39) 的詳細數據。
+   - 修復了之前因 import 錯誤導致的 `NameError: name 'resolve_team_cli' is not defined`。
+4. 驗證：透過 `--output text` 確認輸出格式正確且包含勝敗投與 MVP 資訊（當 API 回傳成功時）。

@@ -73,15 +73,15 @@ def fetch_games_for_date(target_date: str, kind: str = 'A') -> list[dict]:
 
 def fetch_live_inning(year: str, kind: str, game_sno: str) -> Optional[dict]:
     """
-    從 /box/getlive 的 LiveLogJson + CurtGameDetailJson 取得即時局數
+    從 /box/getlive 的 LiveLogJson + CurtGameDetailJson 取得即時局數與賽後數據
     
     策略：
     1. 從 CurtGameDetailJson 取 GameStatus 和分數
     2. 從 ScoreboardJson 取最大局數
     3. 從 LiveLogJson 取最後一筆的 InningSeq + VisitingHomeType（最準確）
+    4. 已結束時一併回傳勝敗投手、MVP 等數據
     
     Returns: dict with inning info or None
-        {'inning': int, 'half': str, 'display': str, 'scores': dict}
     """
     try:
         result = post_api('/box/getlive', {
@@ -143,16 +143,119 @@ def fetch_live_inning(year: str, kind: str, game_sno: str) -> Optional[dict]:
         else:
             display = f'第{max_inning}局{half}半'
         
-        return {
+        info = {
             'inning': max_inning,
             'half': half,
             'display': display,
             'away_score': away_score,
             'home_score': home_score,
+            'game_status': game_status,  # 原始 GameStatus (2=比賽中, 3=已結束)
         }
+        
+        # 已結束：從 CurtGameDetailJson 提取勝敗投手與 MVP
+        if game_status == 3:
+            if curt.get('WinningPitcherName'):
+                info['winning_pitcher'] = curt['WinningPitcherName']
+            if curt.get('LoserPitcherName'):
+                info['losing_pitcher'] = curt['LoserPitcherName']
+            if curt.get('SavePitcherName'):
+                info['save_pitcher'] = curt['SavePitcherName']
+            if curt.get('MvpName'):
+                info['mvp'] = curt['MvpName']
+        
+        return info
         
     except Exception as e:
         print(f'⚠️ getlive 局數查詢失敗: {e}', file=sys.stderr)
+        return None
+
+
+def fetch_box_score_detail(year: str, kind: str, game_sno: str) -> Optional[dict]:
+    """
+    從 /box/getlive 取得詳細 Box Score 數據（打者+投手）
+    
+    Returns: dict with 'batting' and 'pitching' lists, or None
+    """
+    try:
+        result = post_api('/box/getlive', {
+            'year': year,
+            'kindCode': kind,
+            'gameSno': game_sno,
+        })
+        
+        if not result.get('Success'):
+            return None
+        
+        box = {}
+        
+        # 打者數據
+        batting_raw = result.get('BattingJson')
+        if batting_raw:
+            raw_list = json.loads(batting_raw)
+            batters = []
+            for b in raw_list:
+                ip = b.get('InningPitchedCnt', 0) or 0
+                ip_div = b.get('InningPitchedDiv3Cnt', 0) or 0
+                batter = {
+                    'name': b.get('HitterName', ''),
+                    'no': b.get('HitterUniformNo', ''),
+                    'team_type': 'away' if str(b.get('VisitingHomeType')) == '1' else 'home',
+                    'role': b.get('RoleType', ''),  # 先發/非先發
+                    'ab': b.get('PlateAppearances', 0),  # 打數
+                    'r': b.get('ScoreCnt', 0),  # 得分
+                    'h': b.get('HittingCnt', 0),  # 安打
+                    'rbi': b.get('RunBattedINCnt', 0),  # 打點
+                    'hr': b.get('HomeRunCnt', 0),  # 全壘打
+                    'bb': b.get('BasesONBallsCnt', 0),  # 四壞
+                    'so': b.get('StrikeOutCnt', 0),  # 三振
+                    'sb': b.get('StealBaseOKCnt', 0),  # 盜壘成功
+                    'cs': b.get('StealBaseFailCnt', 0),  # 盜壘失敗
+                    'lob': b.get('Lobs', 0),  # 殘壘
+                    'is_mvp': b.get('IsMvp') == '1',
+                }
+                batters.append(batter)
+            box['batting'] = batters
+        
+        # 投手數據
+        pitching_raw = result.get('PitchingJson')
+        if pitching_raw:
+            raw_list = json.loads(pitching_raw)
+            pitchers = []
+            for p in raw_list:
+                ip = p.get('InningPitchedCnt', 0) or 0
+                ip_div = p.get('InningPitchedDiv3Cnt', 0) or 0
+                # 局數顯示：5局+1/3 = 5.1
+                ip_display = f'{ip}.{ip_div}' if ip_div else str(ip)
+                pitcher = {
+                    'name': p.get('PitcherName', ''),
+                    'no': p.get('PitcherUniformNo', ''),
+                    'team_type': 'away' if str(p.get('VisitingHomeType')) == '1' else 'home',
+                    'role': p.get('RoleType', ''),  # 先發/中繼/後援
+                    'ip': ip_display,  # 投球局數
+                    'np': p.get('PitchCnt', 0),  # 投球數
+                    'h': p.get('HittingCnt', 0),  # 被安打
+                    'hr': p.get('HomeRunCnt', 0),  # 被全壘打
+                    'bb': p.get('BasesONBallsCnt', 0),  # 四壞
+                    'so': p.get('StrikeOutCnt', 0),  # 奪三振
+                    'r': p.get('RunCnt', 0),  # 失分
+                    'er': p.get('EarnedRunCnt', 0),  # 自責分
+                    'era': p.get('TotalEarnedRunCnt', 0),  # 防禦率(累計)
+                    'result': p.get('GameResult', ''),  # 勝/敗/救
+                    'hold': p.get('ReliefPointCnt', 0),  # 中繼點
+                    'save_point': p.get('SavePointCnt', 0),  # 救援點
+                    'is_save_ok': p.get('IsSaveOK') == '1',  # 救援成功
+                    'is_save_fail': p.get('IsSaveFail') == '1',  # 救援失敗
+                    'max_speed': p.get('GameHigherSpeedPitch', 0),  # 最快球速
+                    'is_cg': p.get('IsCompleteGame') == '1',  # 完投
+                    'is_sho': p.get('IsShoutOut') == '1',  # 完封
+                }
+                pitchers.append(pitcher)
+            box['pitching'] = pitchers
+        
+        return box if box else None
+        
+    except Exception as e:
+        print(f'⚠️ fetch_box_score_detail 失敗: {e}', file=sys.stderr)
         return None
 
 
@@ -226,8 +329,21 @@ def build_live_summary(games_raw: list[dict], date_str: str) -> list[dict]:
             except (ValueError, TypeError):
                 game_time_str = ''
         
-        # 比賽時長
-        duration = g.get('GameDuringTime', '')
+        # 比賽時長（格式轉換：032300 → 3h23m）
+        duration_raw = g.get('GameDuringTime', '')
+        duration = ''
+        if duration_raw and len(duration_raw) >= 6:
+            try:
+                dh = int(duration_raw[:2])
+                dm = int(duration_raw[2:4])
+                parts = []
+                if dh > 0:
+                    parts.append(f'{dh}h')
+                if dm > 0:
+                    parts.append(f'{dm}m')
+                duration = ''.join(parts) or '0m'
+            except (ValueError, TypeError):
+                duration = duration_raw
         
         # 基本資訊
         entry = {
@@ -241,6 +357,21 @@ def build_live_summary(games_raw: list[dict], date_str: str) -> list[dict]:
             'status_emoji': STATUS_EMOJI.get(status, '❓'),
         }
         
+        # 比賽中：查 getlive 取局數（同時修正狀態）
+        year = g.get('Year', date_str[:4])
+        kind_code = g.get('KindCode', 'A')
+        sno = g.get('GameSno', '')
+        inning_info = None
+        
+        if sno and status in ('比賽中', '未開打'):
+            inning_info = fetch_live_inning(year, kind_code, sno)
+        
+        # getlive GameStatus=3 表示實際已結束 → 覆蓋狀態
+        if inning_info and inning_info.get('game_status') == 3:
+            status = '已結束'
+            entry['status'] = status
+            entry['status_emoji'] = STATUS_EMOJI.get(status, '❓')
+        
         # 比分
         if has_score and (int(away_score or 0) > 0 or int(home_score or 0) > 0 or status in ('已結束', '比賽中')):
             entry['away_score'] = int(away_score or 0)
@@ -249,27 +380,39 @@ def build_live_summary(games_raw: list[dict], date_str: str) -> list[dict]:
         
         # 比賽中顯示局數
         if status == '比賽中':
-            year = g.get('Year', date_str[:4])
-            kind_code = g.get('KindCode', 'A')
-            sno = g.get('GameSno', '')
-            if sno:
-                inning_info = fetch_live_inning(year, kind_code, sno)
-                if inning_info:
-                    entry['inning'] = inning_info
-                    entry['inning_display'] = inning_info['display']
+            if inning_info:
+                entry['inning'] = inning_info
+                entry['inning_display'] = inning_info['display']
             if duration:
                 entry['duration'] = duration
         
-        # 已結束顯示勝敗投手
+        # 已結束顯示勝敗投手 + MVP + 詳細 Box Score
         if status == '已結束':
-            if g.get('WinningPitcherName'):
+            if inning_info:
+                # 從 /box/getlive 的 CurtGameDetailJson 取得（較即時）
+                if inning_info.get('winning_pitcher'):
+                    entry['winning_pitcher'] = inning_info['winning_pitcher']
+                if inning_info.get('losing_pitcher'):
+                    entry['losing_pitcher'] = inning_info['losing_pitcher']
+                if inning_info.get('save_pitcher'):
+                    entry['save_pitcher'] = inning_info['save_pitcher']
+                if inning_info.get('mvp'):
+                    entry['mvp'] = inning_info['mvp']
+            # 備援：getgamedatas 基本資訊
+            if not entry.get('winning_pitcher') and g.get('WinningPitcherName'):
                 entry['winning_pitcher'] = g.get('WinningPitcherName')
-            if g.get('LoserPitcherName'):
+            if not entry.get('losing_pitcher') and g.get('LoserPitcherName'):
                 entry['losing_pitcher'] = g.get('LoserPitcherName')
-            if g.get('MvpName'):
+            if not entry.get('mvp') and g.get('MvpName'):
                 entry['mvp'] = g.get('MvpName')
             if duration:
                 entry['duration'] = duration
+            
+            # 詳細 Box Score（打者+投手）
+            if sno:
+                box_detail = fetch_box_score_detail(year, kind_code, sno)
+                if box_detail:
+                    entry['box_score'] = box_detail
         
         # 延賽/取消原因
         if status in ('延賽', '保留', '取消'):
@@ -384,19 +527,54 @@ def format_text(games: list[dict]) -> str:
             if live_parts:
                 lines.append(f'   {" | ".join(live_parts)}')
         
-        # 已結束：勝敗投
+        # 已結束：勝敗投 + Box Score
         if status == '已結束':
             details = []
             if g.get('winning_pitcher'):
                 details.append(f'勝: {g["winning_pitcher"]}')
             if g.get('losing_pitcher'):
                 details.append(f'敗: {g["losing_pitcher"]}')
+            if g.get('save_pitcher'):
+                details.append(f'救: {g["save_pitcher"]}')
             if g.get('mvp'):
                 details.append(f'MVP: {g["mvp"]}')
             if g.get('duration'):
                 details.append(f'⏱️ {g["duration"]}')
             if details:
                 lines.append(f'   {" | ".join(details)}')
+            
+            # 詳細 Box Score
+            box = g.get('box_score')
+            if box:
+                # 投手摘要
+                if box.get('pitching'):
+                    for pt in box['pitching']:
+                        if pt.get('result') or pt['role'] == '先發' or pt.get('hold') or pt.get('is_save_ok'):
+                            tag = ''
+                            if pt['result'] == '勝': tag = '【勝】'
+                            elif pt['result'] == '敗': tag = '【敗】'
+                            elif pt['result'] == '救': tag = '【救】'
+                            side = '客' if pt['team_type'] == 'away' else '主'
+                            p_line = f'   ⚾ {tag}{pt["name"]}({side}) {pt["ip"]}IP {pt["h"]}H {pt["er"]}ER {pt["so"]}K {pt["bb"]}BB'
+                            if pt['hr'] > 0: p_line += f' {pt["hr"]}HR'
+                            if pt.get('hold'): p_line += f' H{pt["hold"]}'
+                            if pt.get('is_save_ok'): p_line += ' SV'
+                            if pt['max_speed']: p_line += f' {pt["max_speed"]}km/h'
+                            lines.append(p_line)
+                
+                # 關鍵打者（安打≥1 或 打點≥1 或 全壘打≥1）
+                if box.get('batting'):
+                    key_batters = [b for b in box['batting'] if b['h'] >= 2 or b['rbi'] >= 1 or b['hr'] >= 1 or b['is_mvp']]
+                    if key_batters:
+                        for b in key_batters:
+                            side = '客' if b['team_type'] == 'away' else '主'
+                            mvp_tag = '⭐' if b['is_mvp'] else ''
+                            b_line = f'   🏏 {mvp_tag}{b["name"]}({side}) {b["ab"]}AB {b["h"]}H'
+                            if b['rbi'] > 0: b_line += f' {b["rbi"]}RBI'
+                            if b['hr'] > 0: b_line += f' {b["hr"]}HR'
+                            if b['r'] > 0: b_line += f' {b["r"]}R'
+                            if b['sb'] > 0: b_line += f' {b["sb"]}SB'
+                            lines.append(b_line)
         
         # 異常狀態
         if status in ('延賽', '保留', '取消', '比賽暫停'):

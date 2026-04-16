@@ -51,7 +51,9 @@ uv run skills/cpbl/scripts/cpbl_stats.py --year 2025 --category batting --top 10
 
 - Live data is polled from the official source and is not push-based.
 - API data may lag by a few minutes.
-- Inning detail may require opening `box_url` or `live_url`.
+- When `PresentStatus` shows "比賽中" but `/box/getlive` returns `GameStatus=3`, the script corrects the status to "已結束" automatically.
+- Finished games now include detailed Box Score: pitcher lines (IP/H/ER/K/BB/HR/H/SV/speed) and key batter lines (AB/H/RBI/HR/R/SB).
+- Game duration is displayed in `Xh Xm` format (e.g. 3h23m).
 - Monday often has no games unless adjusted by holidays or makeup scheduling.
 
 ## Schedule cache

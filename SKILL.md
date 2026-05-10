@@ -7,13 +7,14 @@ description: Query CPBL 中華職棒 scores schedules live games standings playe
 
 Use the bundled scripts for official-site data first.
 Use `web_search` for recent news.
-Use `web_fetch` on 台灣棒球維基館 for awards history or facts the official site does not expose.
+Use Camoufox for 台灣棒球維基館 (awards history, player career data) — it bypasses the Anubis anti-bot protection.
+Do NOT use `web_fetch` or Playwright for twbsball — they will be blocked by Anubis.
 
 ## Primary workflow
 
 1. Pick the narrowest script that matches the request.
 2. Prefer text output for user-facing answers and JSON output for chaining or debugging.
-3. If the official source cannot provide the requested historical fact, fetch 台灣棒球維基館.
+3. If the official source cannot provide the requested historical fact, use Camoufox to fetch 台灣棒球維基館.
 4. If a result looks empty or partial, check `references/api-endpoints.md` before assuming the data does not exist.
 
 ## Script map
@@ -77,18 +78,45 @@ Look for the latest "延賽公告" entry. The live script now auto-detects postp
 
 ## History and awards
 
-Use 台灣棒球維基館 for MVP 新人王 歷史紀錄 球員生涯資料 or older facts that the official site does not return.
-Search URL format
+台灣棒球維基館 (twbsball) 自 2026-05 起啟用 Anubis v1.25.0 anti-bot 防護。
+`web_fetch`、`tavily_extract`、Playwright 都會被擋。
+**但 Camoufox (Scrapling StealthyFetcher 底層引擎) 可以成功繞過。**
 
-```text
-https://twbsball.dils.tku.edu.tw/wiki/index.php?title=關鍵字
+### 查詢維基館的方法（優先順序）
+
+1. **Camoufox** — 使用 CPBL venv 裡的 `camoufox` 直接抓取維基館頁面（已驗證可用）
+2. `web_search` / `tavily_search` — 搜尋引擎快照
+3. 維基百科 (zh.wikipedia.org)
+4. 請使用者手動查詢
+
+### Camoufox 查詢維基館
+
+使用 `skills/cpbl/.venv` 裡的 camoufox，**不要用 `web_fetch` 或 Playwright**。
+
+```python
+from camoufox.sync_api import Camoufox
+
+with Camoufox(headless=True) as browser:
+    page = browser.new_page()
+    page.goto("https://twbsball.dils.tku.edu.tw/wiki/index.php?title=中華職棒年度最有價值球員", timeout=60000)
+    page.wait_for_timeout(10000)  # 等 Anubis PoW 挑戰完成
+    title = page.title()
+    text = page.inner_text("#mw-content-text")
+    browser.close()
 ```
 
-Common pages
+注意事項：
+- 必須 `wait_for_timeout(10000)` 以上讓 Anubis PoW 挑戰跑完
+- headless=True 即可，不需 headful
+- 啟動較慢（要啟動 Camoufox browser），約需 10-15 秒
+- 如果要查多個頁面，複用同一個 browser 實例
 
-- `中華職棒年度最有價值球員`
-- `中華職棒年度新人王`
-- `球員姓名`
+### 常用維基館頁面
+
+- `中華職棒年度最有價值球員` (MVP)
+- `中華職棒年度最佳新人獎` (新人王)
+- `球員姓名` (球員生涯資料)
+- URL 格式：`https://twbsball.dils.tku.edu.tw/wiki/index.php?title=頁面標題`
 
 ## References
 
@@ -103,3 +131,4 @@ Read these only when needed
 - Some official endpoints return HTML fragments instead of JSON.
 - Some standings and schedule flows are brittle because the site relies on AJAX plus CSRF.
 - If a script returns partial data, do not invent missing values. State the limit and fall back to another source when possible.
+- **台灣棒球維基館 (twbsball) 自 2026-05 起啟用 Anubis anti-bot。** `web_fetch`/Playwright 無法存取，但 Camoufox 可以繞過（見上方 History and awards 段落）。

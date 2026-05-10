@@ -1,20 +1,28 @@
 ---
 name: cpbl
 description: Query CPBL 中華職棒 scores schedules live games standings player stats news and Taiwan baseball history for Taiwan users Use when the user asks about CPBL 戰績 賽程 即時比分 球員數據 排行榜 新聞 年度獎項 二軍 熱身賽 總冠軍賽 or historical CPBL facts
+metadata:
+  openclaw:
+    emoji: ⚾
+    requires:
+      bins:
+        - uv
+      anyBins:
+        - python3
 ---
 
 # CPBL
 
 Use the bundled scripts for official-site data first.
 Use `web_search` for recent news.
-Use Camoufox for 台灣棒球維基館 (awards history, player career data) — the site uses Anubis protection that blocks standard fetch tools, but Camoufox can access it.
+Use Scrapling `StealthyFetcher` for 台灣棒球維基館 (awards history, player career data) — the site uses Anubis protection that blocks standard fetch tools, but Scrapling's stealth browser can access it.
 Do NOT use `web_fetch` or Playwright for twbsball — they will be blocked by Anubis.
 
 ## Primary workflow
 
 1. Pick the narrowest script that matches the request.
 2. Prefer text output for user-facing answers and JSON output for chaining or debugging.
-3. If the official source cannot provide the requested historical fact, use Camoufox to fetch 台灣棒球維基館.
+3. If the official source cannot provide the requested historical fact, use Scrapling `StealthyFetcher` to fetch 台灣棒球維基館.
 4. If a result looks empty or partial, check `references/api-endpoints.md` before assuming the data does not exist.
 
 ## Script map
@@ -80,36 +88,61 @@ Look for the latest "延賽公告" entry. The live script now auto-detects postp
 
 台灣棒球維基館 (twbsball) 自 2026-05 起啟用 Anubis v1.25.0 防護機制。
 `web_fetch`、`tavily_extract`、Playwright 無法存取該站。
-**使用 Camoufox (Scrapling StealthyFetcher 底層引擎) 可以正常存取。**
+**使用 Scrapling `StealthyFetcher` 可以正常存取（已驗證）。**
 
 ### 查詢維基館的方法（優先順序）
 
-1. **Camoufox** — 使用 CPBL venv 裡的 `camoufox` 直接抓取維基館頁面（已驗證可用）
+1. **Scrapling StealthyFetcher** — 使用 CPBL venv 裡的 `scrapling` 直接抓取維基館頁面（已驗證可用）
 2. `web_search` / `tavily_search` — 搜尋引擎快照
 3. 維基百科 (zh.wikipedia.org)
 4. 請使用者手動查詢
 
-### Camoufox 查詢維基館
+### Scrapling 查詢維基館
 
-使用 `skills/cpbl/.venv` 裡的 camoufox，**不要用 `web_fetch` 或 Playwright**。
+使用 `skills/cpbl/.venv` 裡的 scrapling，**不要用 `web_fetch` 或 Playwright**。
+
+**安裝（首次使用前）：**
+```bash
+# 1. 建立 venv 並安裝依賴（如果 .venv 不存在）
+cd skills/cpbl && uv venv && uv pip install -e .
+# 2. 安裝 stealth browser（Scrapling StealthyFetcher 需要）
+.venv/bin/scrapling install --force
+```
 
 ```python
-from camoufox.sync_api import Camoufox
+from scrapling.fetchers import StealthyFetcher
 
-with Camoufox(headless=True) as browser:
-    page = browser.new_page()
-    page.goto("https://twbsball.dils.tku.edu.tw/wiki/index.php?title=中華職棒年度最有價值球員", timeout=60000)
-    page.wait_for_timeout(10000)  # 等頁面載入完成
-    title = page.title()
-    text = page.inner_text("#mw-content-text")
-    browser.close()
+page = StealthyFetcher.fetch(
+    "https://twbsball.dils.tku.edu.tw/wiki/index.php?title=中華職棒年度最有價值球員",
+    headless=True,
+    wait=10000,
+)
+text = page.css("#mw-content-text")[0].get_all_text()
+print(text)
+```
+
+CLI 替代方案（適合一次性查詢，需先執行安裝步驟 2）：
+```bash
+skills/cpbl/.venv/bin/scrapling extract stealthy-fetch \
+  "https://twbsball.dils.tku.edu.tw/wiki/index.php?title=中華職棒年度最有價值球員" \
+  result.md --ai-targeted --wait 10000
 ```
 
 注意事項：
-- 必須 `wait_for_timeout(10000)` 以上讓頁面載入完成
+- `wait=10000` (毫秒) 讓 Anubis PoW 挑戰完成，頁面載入後才抓
 - headless=True 即可，不需 headful
-- 啟動較慢（要啟動 Camoufox browser），約需 10-15 秒
-- 如果要查多個頁面，複用同一個 browser 實例
+- 啟動較慢（要啟動 stealth browser），約需 10-15 秒
+- 如果要查多個頁面，使用 `StealthySession` 複用同一個 browser 實例：
+
+```python
+from scrapling.fetchers import StealthySession
+
+with StealthySession(headless=True) as session:
+    page1 = session.fetch("https://twbsball.dils.tku.edu.tw/wiki/index.php?title=中華職棒年度最有價值球員")
+    text1 = page1.css("#mw-content-text")[0].get_all_text()
+    page2 = session.fetch("https://twbsball.dils.tku.edu.tw/wiki/index.php?title=中華職棒年度最佳新人獎")
+    text2 = page2.css("#mw-content-text")[0].get_all_text()
+```
 
 ### 常用維基館頁面
 
@@ -131,4 +164,4 @@ Read these only when needed
 - Some official endpoints return HTML fragments instead of JSON.
 - Some standings and schedule flows are brittle because the site relies on AJAX plus CSRF.
 - If a script returns partial data, do not invent missing values. State the limit and fall back to another source when possible.
-- **台灣棒球維基館 (twbsball) 自 2026-05 起啟用 Anubis 防護機制。** `web_fetch`/Playwright 無法存取，使用 Camoufox 可以正常讀取（見上方 History and awards 段落）。
+- **台灣棒球維基館 (twbsball) 自 2026-05 起啟用 Anubis 防護機制。** `web_fetch`/Playwright 無法存取，使用 Scrapling `StealthyFetcher` 可以正常讀取（見上方 History and awards 段落）。

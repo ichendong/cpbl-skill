@@ -2,14 +2,33 @@
 
 查詢中華職棒 CPBL 即時比分 已完賽結果 賽程 戰績 球員數據 新聞與歷史資料
 
+## v1.5.2 重點
+
+- **Scrapling StealthyFetcher 正式取代 Camoufox**：維基館爬蟲全面改用 Scrapling 原生 API
+  - `StealthyFetcher.fetch()` 一行搞定，不再需要手動管理 browser context
+  - 支援 `StealthySession` 複用 browser，多頁面查詢更高效
+  - CLI `scrapling extract stealthy-fetch --ai-targeted` 也可直接用
+  - 文字提取改用 `page.css()[0].get_all_text()` 取代舊的 `inner_text()`
+- **SKILL.md 加入安裝說明**：新增 `metadata.openclaw.requires` (uv, python3) 與 stealth browser 安裝步驟
+- **移除 camoufox 直接依賴**：scrapling 內建 patchright stealth browser，不需要額外裝 camoufox
+- **已驗證**：StealthyFetcher 成功抓取 twbsball (Anubis v1.25.0)，MVP 歷史頁 2233 字元完整取得
+
+## v1.5.1 重點
+
+- **Scrapling StealthyFetcher 取代 Camoufox**：維基館爬蟲改用 Scrapling 原生 API
+  - `StealthyFetcher.fetch()` 一行搞定，不再需要手動管理 browser context
+  - 支援 `StealthySession` 複用 browser，多頁面查詢更高效
+  - CLI `scrapling extract stealthy-fetch` 也可直接用
+- **移除 camoufox 直接依賴**：scrapling 內建 stealth browser，不需要額外裝 camoufox
+
 ## v1.5.0 重點
 
-- **Camoufox 繞過 Anubis 防爬機制**：台灣棒球維基館 (twbsball) 自 2026-05 啟用 Anubis v1.25.0 Proof-of-Work + browser fingerprint 防護
+- **Scrapling 繞過 Anubis 防爬機制**：台灣棒球維基館 (twbsball) 自 2026-05 啟用 Anubis v1.25.0 Proof-of-Work + browser fingerprint 防護
   - `web_fetch`、`tavily_extract`、Playwright 全部被封鎖
-  - 新增 Camoufox (Scrapling StealthyFetcher 底層引擎) 支援，headless 模式即可成功繞過 PoW 挑戰
-  - SKILL.md 新增 Camoufox 使用範例與注意事項
-- **維基館查詢優先順序調整**：歷史/獎項資料改用 Camoufox → web_search → 維基百科 → 手動查詢
-- **依賴更新**：skill venv 新增 `scrapling[all]` + `camoufox`
+  - Scrapling `StealthyFetcher` headless 模式即可成功繞過 PoW 挑戰
+  - SKILL.md 新增 Scrapling 使用範例與注意事項
+- **維基館查詢優先順序調整**：歷史/獎項資料改用 StealthyFetcher → web_search → 維基百科 → 手動查詢
+- **依賴更新**：skill venv 已有 `scrapling[all]`（內含 stealth browser 引擎）
 
 ## v1.4.3 重點
 
@@ -45,14 +64,14 @@
 - 戰績排名 `scripts/cpbl_standings.py`
 - 球員與排行榜數據 `scripts/cpbl_stats.py`
 - 近期新聞 直接用 `web_search` 查 CPBL 官網新聞頁
-- 歷史獎項與紀錄 Camoufox 查台灣棒球維基館（可繞過 Anubis 防爬）
+- 歷史獎項與紀錄 Scrapling StealthyFetcher 查台灣棒球維基館（可繞過 Anubis 防爬）
 
 ## 資料來源
 
 | 來源 | 用途 | 備註 |
 |------|------|------|
 | CPBL 官方站隱藏 API | 即時比分 比賽結果 賽程 戰績 球員數據 | 直接可用 |
-| 台灣棒球維基館 | 年度獎項 歷史紀錄 球員生涯資料 | 需 Camoufox 繞過 Anubis |
+| 台灣棒球維基館 | 年度獎項 歷史紀錄 球員生涯資料 | 需 Scrapling StealthyFetcher 繞過 Anubis |
 
 ## 快速開始
 
@@ -65,18 +84,36 @@ uv run scripts/cpbl_stats.py --year 2025 --category batting --top 10
 # 近期新聞請用 web_search 搜尋 CPBL 官網
 ```
 
-### 查詢台灣棒球維基館（需 Camoufox）
+### 查詢台灣棒球維基館（需 Scrapling StealthyFetcher）
+
+**安裝（首次使用前）：**
+```bash
+# 1. 建立 venv 並安裝依賴（如果 .venv 不存在）
+cd skills/cpbl && uv venv && uv pip install -e .
+# 2. 安裝 stealth browser（Scrapling StealthyFetcher 需要）
+.venv/bin/scrapling install --force
+```
 
 ```python
 # 在 CPBL skill venv 中執行
-from camoufox.sync_api import Camoufox
+from scrapling.fetchers import StealthyFetcher
 
-with Camoufox(headless=True) as browser:
-    page = browser.new_page()
-    page.goto("https://twbsball.dils.tku.edu.tw/wiki/index.php?title=中華職棒年度最有價值球員", timeout=60000)
-    page.wait_for_timeout(10000)  # 等 Anubis PoW 挑戰完成
-    text = page.inner_text("#mw-content-text")
-    browser.close()
+page = StealthyFetcher.fetch(
+    "https://twbsball.dils.tku.edu.tw/wiki/index.php?title=中華職棒年度最有價值球員",
+    headless=True,
+    wait=10000,  # 等 Anubis PoW 挑戰完成
+)
+text = page.css("#mw-content-text")[0].get_all_text()
+print(text)
+```
+
+多頁面查詢用 `StealthySession` 複用 browser：
+```python
+from scrapling.fetchers import StealthySession
+
+with StealthySession(headless=True) as session:
+    page1 = session.fetch("https://twbsball.dils.tku.edu.tw/wiki/index.php?title=中華職棒年度最有價值球員")
+    text1 = page1.css("#mw-content-text")[0].get_all_text()
 ```
 
 ## 授權

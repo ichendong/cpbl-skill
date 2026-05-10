@@ -7,7 +7,7 @@ description: Query CPBL 中華職棒 scores schedules live games standings playe
 
 Use the bundled scripts for official-site data first.
 Use `web_search` for recent news.
-Use Camoufox for 台灣棒球維基館 (awards history, player career data) — it bypasses the Anubis anti-bot protection.
+Use Camoufox for 台灣棒球維基館 (awards history, player career data) — the site uses Anubis protection that blocks standard fetch tools, but Camoufox can access it.
 Do NOT use `web_fetch` or Playwright for twbsball — they will be blocked by Anubis.
 
 ## Primary workflow
@@ -78,9 +78,9 @@ Look for the latest "延賽公告" entry. The live script now auto-detects postp
 
 ## History and awards
 
-台灣棒球維基館 (twbsball) 自 2026-05 起啟用 Anubis v1.25.0 anti-bot 防護。
-`web_fetch`、`tavily_extract`、Playwright 都會被擋。
-**但 Camoufox (Scrapling StealthyFetcher 底層引擎) 可以成功繞過。**
+台灣棒球維基館 (twbsball) 自 2026-05 起啟用 Anubis v1.25.0 防護機制。
+`web_fetch`、`tavily_extract`、Playwright 無法存取該站。
+**使用 Camoufox (Scrapling StealthyFetcher 底層引擎) 可以正常存取。**
 
 ### 查詢維基館的方法（優先順序）
 
@@ -99,14 +99,14 @@ from camoufox.sync_api import Camoufox
 with Camoufox(headless=True) as browser:
     page = browser.new_page()
     page.goto("https://twbsball.dils.tku.edu.tw/wiki/index.php?title=中華職棒年度最有價值球員", timeout=60000)
-    page.wait_for_timeout(10000)  # 等 Anubis PoW 挑戰完成
+    page.wait_for_timeout(10000)  # 等頁面載入完成
     title = page.title()
     text = page.inner_text("#mw-content-text")
     browser.close()
 ```
 
 注意事項：
-- 必須 `wait_for_timeout(10000)` 以上讓 Anubis PoW 挑戰跑完
+- 必須 `wait_for_timeout(10000)` 以上讓頁面載入完成
 - headless=True 即可，不需 headful
 - 啟動較慢（要啟動 Camoufox browser），約需 10-15 秒
 - 如果要查多個頁面，複用同一個 browser 實例
@@ -131,4 +131,4 @@ Read these only when needed
 - Some official endpoints return HTML fragments instead of JSON.
 - Some standings and schedule flows are brittle because the site relies on AJAX plus CSRF.
 - If a script returns partial data, do not invent missing values. State the limit and fall back to another source when possible.
-- **台灣棒球維基館 (twbsball) 自 2026-05 起啟用 Anubis anti-bot。** `web_fetch`/Playwright 無法存取，但 Camoufox 可以繞過（見上方 History and awards 段落）。
+- **台灣棒球維基館 (twbsball) 自 2026-05 起啟用 Anubis 防護機制。** `web_fetch`/Playwright 無法存取，使用 Camoufox 可以正常讀取（見上方 History and awards 段落）。
